@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventaire JdR</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #12100e; --surface: #1e1812; --surface2: #2a2016;
+      --border: #3d2f1a; --gold: #c9a227; --gold-l: #e8c547;
+      --amber: #6a4010; --text: #e0d0b0; --muted: #8a7a5a;
+      --red: #8b2020; --green: #1e5a2a; --r: 7px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: Georgia, serif; min-height: 100vh; }
+
+    /* ── Utilitaires ── */
+    .hidden { display: none !important; }
+    input, select, button { font-family: inherit; }
+    input, select {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: var(--r); padding: 8px 10px; font-size: 14px; width: 100%;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--gold); }
+    input::placeholder { color: var(--muted); }
+    select option { background: var(--surface2); }
+    .btn {
+      border: 1px solid var(--border); background: var(--amber); color: var(--gold-l);
+      padding: 8px 16px; border-radius: var(--r); cursor: pointer; font-size: 13px;
+      letter-spacing: .5px; transition: background .2s;
+    }
+    .btn:hover { background: #8a5520; }
+    .btn.danger { background: #4a1010; border-color: var(--red); color: #f08080; }
+    .btn.danger:hover { background: #6a1818; }
+    .badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .badge.online { background: #0e2e18; border-color: #2a7a3a; color: #6af09a; }
+    .badge.offline { background: #2e0e0e; border-color: #7a2a2a; color: #f09090; }
+
+    /* ── ÉCRAN CONNEXION ── */
+    #screen-login {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem;
+    }
+    .login-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2rem 2.5rem; width: 100%; max-width: 420px;
+    }
+    .login-title {
+      font-size: 22px; color: var(--gold); text-align: center;
+      letter-spacing: 3px; margin-bottom: 4px;
+    }
+    .login-sub { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; margin-bottom: 1.5rem; }
+    .role-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.25rem; }
+    .role-tab {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+      padding: 10px; border-radius: var(--r); cursor: pointer; text-align: center;
+      font-size: 14px; transition: all .2s;
+    }
+    .role-tab:hover { border-color: var(--gold); color: var(--text); }
+    .role-tab.active { background: var(--amber); border-color: var(--gold); color: var(--gold-l); }
+    .login-fields { display: flex; flex-direction: column; gap: 10px; }
+    .error-msg { color: #f08080; font-size: 13px; text-align: center; font-style: italic; min-height: 18px; }
+
+    /* ── HEADER COMMUN ── */
+    .top-bar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 10px 20px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .top-bar h1 { font-size: 16px; color: var(--gold); letter-spacing: 2px; }
+    .top-bar .right { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+
+    /* ── ÉCRAN JOUEUR ── */
+    #screen-player { display: flex; flex-direction: column; min-height: 100vh; }
+    .player-body { padding: 1.25rem; max-width: 680px; margin: 0 auto; width: 100%; }
+
+    .gold-bar {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+      margin-bottom: 1rem;
+    }
+    .gold-bar span { font-size: 13px; color: var(--muted); }
+    .gold-bar .amount { font-size: 20px; color: var(--gold); font-weight: bold; flex: 1; }
+    .gold-bar input[type=number] { width: 80px; text-align: center; color: var(--gold); font-weight: bold; }
+
+    .add-section {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 12px 14px; margin-bottom: 1rem;
+    }
+    .add-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 10px; }
+    .add-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+
+    .section-label { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
+    .inv-list { display: flex; flex-direction: column; gap: 6px; }
+    .inv-empty { text-align: center; color: var(--muted); font-style: italic; padding: 2rem; font-size: 14px; }
+
+    .item-row {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 9px 12px; display: flex; align-items: center; gap: 10px;
+      transition: border-color .2s;
+    }
+    .item-row:hover { border-color: var(--amber); }
+    .item-icon { font-size: 20px; width: 32px; text-align: center; flex-shrink: 0; }
+    .item-info { flex: 1; min-width: 0; }
+    .item-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-meta { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 1px; }
+    .qty-ctrl { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .qty-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      width: 22px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    .qty-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .qty-val { font-size: 14px; font-weight: bold; min-width: 24px; text-align: center; color: var(--gold-l); }
+    .del-btn {
+      background: none; border: 1px solid transparent; color: var(--muted);
+      width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    .del-btn:hover { border-color: var(--red); color: #f55; background: rgba(139,32,32,.2); }
+
+    /* ── ÉCRAN GM ── */
+    #screen-gm { display: flex; flex-direction: column; min-height: 100vh; }
+    .gm-body { display: flex; flex: 1; overflow: hidden; }
+
+    .player-sidebar {
+      width: 230px; flex-shrink: 0;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+    }
+    .sidebar-title { font-size: 11px; color: var(--muted); letter-spacing: 1.5px; padding: 12px 14px 8px; }
+    .player-cards { flex: 1; overflow-y: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 6px; }
+    .player-card {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 9px 11px; cursor: pointer; transition: all .2s;
+    }
+    .player-card:hover { border-color: var(--amber); }
+    .player-card.selected { border-color: var(--gold); background: #2e2210; }
+    .player-card .pname { font-size: 14px; color: var(--text); }
+    .player-card .pmeta { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
+    .no-players { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; padding: 1.5rem 8px; }
+
+    .gm-main { flex: 1; overflow-y: auto; padding: 1.25rem; }
+    .gm-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-style: italic; }
+    .gm-player-header {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .gm-player-header h2 { font-size: 16px; color: var(--gold); }
+    .gm-player-header .hmeta { font-size: 12px; color: var(--muted); font-style: italic; }
+
+    /* ── Compétences ── */
+    .skill-row {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 6px 10px; display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+    }
+    .skill-row:hover { border-color: var(--amber); }
+    .skill-name { flex: 1; font-size: 14px; min-width: 0; }
+    .skill-val {
+      width: 60px; text-align: center; font-weight: bold; color: var(--gold-l);
+    }
+    .skill-val input {
+      width: 60px; text-align: center; padding: 4px 6px; font-size: 13px;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--gold-l); border-radius: 4px;
+    }
+    .skill-val input:focus { border-color: var(--gold); outline: none; }
+    .skill-del {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 14px; padding: 2px 6px; border-radius: 4px;
+    }
+    .skill-del:hover { color: #f55; background: rgba(139,32,32,.2); }
+    .add-skill-row {
+      display: flex; gap: 6px; align-items: center; margin-top: 6px;
+    }
+    .add-skill-row input { flex: 1; }
+    .add-skill-row .btn { flex-shrink: 0; }
+
+    /* ── Lancé de dés ── */
+    .dice-section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; margin-top: 1rem;
+    }
+    .dice-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
+    .dice-input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .dice-input-row input { flex: 1; font-family: monospace; font-size: 16px; }
+    .dice-input-row .btn { flex-shrink: 0; }
+    .dice-log {
+      max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+      background: rgba(0,0,0,.25); border-radius: var(--r); padding: 8px;
+      font-size: 13px;
+    }
+    .dice-log:empty { display: none; }
+    .dice-entry {
+      padding: 4px 8px; border-radius: 4px; border-left: 3px solid var(--gold);
+      background: rgba(201,162,39,.08);
+    }
+    .dice-entry.gm-roll { border-left-color: var(--red); background: rgba(139,32,32,.1); }
+    .dice-entry .de-roll { color: var(--gold-l); font-weight: bold; }
+    .dice-entry .de-total { color: #6af09a; font-weight: bold; font-size: 15px; }
+
+    /* ── Chat vocal ── */
+    .voice-section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; margin-top: 1rem;
+    }
+    .voice-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
+    .voice-bar { display: flex; align-items: center; gap: 10px; }
+    .voice-bar .btn { flex-shrink: 0; }
+    .voice-status { font-size: 13px; color: var(--muted); flex: 1; }
+    .voice-users { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .voice-user-badge {
+      font-size: 12px; padding: 2px 8px; border-radius: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .voice-user-badge.talking { border-color: #6af09a; background: #0e2e18; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════ ÉCRAN CONNEXION ══════════════════════════════ -->
+<div id="screen-login">
+  <div class="login-box">
+    <h1 class="login-title">⚔ Taverne ⚔</h1>
+    <p class="login-sub">Inventaire de Jeu de Rôle</p>
+
+    <div class="role-tabs">
+      <div class="role-tab active" id="tab-player" onclick="selectRole('player')">🧙 Joueur</div>
+      <div class="role-tab"        id="tab-gm"     onclick="selectRole('gm')">👑 Maître du Jeu</div>
+    </div>
+
+    <div class="login-fields">
+      <input id="inp-player-name" placeholder="Votre nom d'aventurier..." maxlength="30" />
+      <input id="inp-gm-pass" type="password" placeholder="Mot de passe GM..." class="hidden" />
+      <p class="error-msg" id="login-error"></p>
+      <button class="btn" onclick="doConnect()">Se connecter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ ÉCRAN JOUEUR ══════════════════════════════════ -->
+<div id="screen-player" class="hidden">
+  <div class="top-bar">
+    <h1>⚔ Inventaire</h1>
+    <div class="right">
+      <span id="player-name-label"></span>
+      <span class="badge offline" id="gm-badge">GM hors ligne</span>
+    </div>
+  </div>
+
+  <div class="player-body">
+    <!-- Or -->
+    <div class="gold-bar">
+      <span>🪙</span>
+      <span class="amount" id="gold-display">0 po</span>
+      <input type="number" id="gold-inp" min="0" value="0" style="width:90px" onchange="sendGold(this.value)" />
+      <button class="qty-btn" onclick="changeGold(-1)">−</button>
+      <button class="qty-btn" onclick="changeGold(+1)">+</button>
+    </div>
+
+    <!-- Ajouter -->
+    <div class="add-section">
+      <h3>✦ AJOUTER UN OBJET</h3>
+      <div class="add-grid">
+        <input id="p-name"   placeholder="Nom de l'objet..." />
+        <select id="p-type">
+          <option value="arme">⚔ Arme</option>
+          <option value="armure">🛡 Armure</option>
+          <option value="potion">⚗ Potion</option>
+          <option value="magie">✨ Magie</option>
+          <option value="nourriture">🍖 Nourriture</option>
+          <option value="misc">💼 Divers</option>
+        </select>
+        <input id="p-weight" type="number" min="0" step="0.1" placeholder="Poids (kg)" />
+        <input id="p-value"  type="number" min="0" placeholder="Valeur (po)" />
+      </div>
+      <button class="btn" onclick="addMyItem()" style="width:100%">+ Ajouter à l'inventaire</button>
+    </div>
+
+    <!-- Liste -->
+    <p class="section-label">INVENTAIRE (<span id="p-count">0</span> objets)</p>
+    <div class="inv-list" id="p-inv-list">
+      <div class="inv-empty">Votre inventaire est vide.</div>
+    </div>
+
+    <!-- Compétences -->
+    <div class="add-section" style="margin-top:1rem">
+      <h3>✦ COMPÉTENCES</h3>
+      <div id="p-skills-list"></div>
+      <div class="add-skill-row">
+        <input id="p-skill-name" placeholder="Nom de la compétence..." maxlength="30" />
+        <input id="p-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
+        <button class="btn" onclick="addMySkill()">Ajouter</button>
+      </div>
+    </div>
+
+    <!-- Lancé de dés -->
+    <div class="dice-section">
+      <h3>🎲 LANCER DE DÉS</h3>
+      <div class="dice-input-row">
+        <input id="p-dice-expr" placeholder="ex: 1d20, 2d6+3" onkeydown="if(event.key==='Enter')rollDice()" />
+        <button class="btn" onclick="rollDice()">Lancer</button>
+      </div>
+      <div class="dice-log" id="p-dice-log"></div>
+    </div>
+
+    <!-- Chat vocal -->
+    <div class="voice-section">
+      <h3>🎤 CHAT VOCAL</h3>
+      <div class="voice-bar" id="p-voice-bar">
+        <button class="btn" id="p-voice-btn" onclick="toggleVoice()">🔊 Rejoindre</button>
+        <span class="voice-status" id="p-voice-status">Microphone désactivé</span>
+      </div>
+      <div class="voice-users" id="p-voice-users"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ ÉCRAN GM ═══════════════════════════════════ -->
+<div id="screen-gm" class="hidden">
+  <div class="top-bar">
+    <h1>👑 Maître du Jeu</h1>
+    <div class="right">
+      <span id="gm-player-count">0 joueur(s) connecté(s)</span>
+    </div>
+  </div>
+
+  <div class="gm-body">
+    <!-- Sidebar joueurs -->
+    <div class="player-sidebar">
+      <p class="sidebar-title">JOUEURS CONNECTÉS</p>
+      <div class="player-cards" id="gm-player-cards">
+        <p class="no-players">Aucun joueur<br>connecté.</p>
+      </div>
+    </div>
+
+    <!-- Zone principale -->
+    <div class="gm-main" id="gm-main">
+      <div class="gm-placeholder">← Sélectionnez un joueur</div>
+    </div>
+  </div>
+
+  <!-- Chat vocal (toujours visible) -->
+  <div class="voice-section" style="border-radius:0;margin:0;border-left:none;border-right:none;border-bottom:none">
+    <div style="max-width:1000px;margin:0 auto">
+      <div class="voice-bar">
+        <button class="btn" id="gm-voice-btn" onclick="toggleVoice()">🔊 Rejoindre</button>
+        <span class="voice-status" id="gm-voice-status">Microphone désactivé</span>
+      </div>
+      <div class="voice-users" id="gm-voice-users"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// État client
+// ══════════════════════════════════════════════════════════════════════════════
+const S = {
+  ws: null, role: null, myId: null, myName: null,
+  inventory: [], gold: 0, skills: [],
+  players: {},       // GM : { id -> {name, gold, inventory, skills} }
+  selectedId: null,  // GM : joueur sélectionné
+  diceLog: [],       // GM : historique des lancers
+  voiceJoined: false,
+  voiceStream: null,
+  voicePeers: {},    // { playerId: { playerId, name, pc } }
+};
+
+const ICONS = { arme:'⚔', armure:'🛡', potion:'⚗', magie:'✨', nourriture:'🍖', misc:'💼' };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Connexion
+// ══════════════════════════════════════════════════════════════════════════════
+let selectedRole = 'player';
+
+function selectRole(r) {
+  selectedRole = r;
+  document.getElementById('tab-player').classList.toggle('active', r === 'player');
+  document.getElementById('tab-gm').classList.toggle('active', r === 'gm');
+  document.getElementById('inp-player-name').classList.toggle('hidden', r === 'gm');
+  document.getElementById('inp-gm-pass').classList.toggle('hidden', r === 'player');
+}
+
+function doConnect() {
+  const err = document.getElementById('login-error');
+  err.textContent = 'Connexion...';
+
+  if (selectedRole === 'player') {
+    const name = document.getElementById('inp-player-name').value.trim();
+    if (!name) return err.textContent = 'Entrez un nom.';
+    S._pendingName = name;
+  } else {
+    S._pendingPass = document.getElementById('inp-gm-pass').value;
+  }
+
+  // Socket.io essaie WebSocket puis bascule sur HTTP polling si le tunnel le bloque
+  S.socket = io({ transports: ['websocket', 'polling'] });
+
+  S.socket.on('connect', () => {
+    err.textContent = '';
+    if (selectedRole === 'player') {
+      S.socket.emit('join', { name: S._pendingName });
+    } else {
+      S.socket.emit('join_gm', { password: S._pendingPass });
+    }
+  });
+
+  S.socket.on('connect_error', () => {
+    err.textContent = 'Impossible de contacter le serveur.';
+  });
+
+  S.socket.on('disconnect', () => {
+    if (S.role) alert('Déconnecté du serveur. Rechargez la page.');
+  });
+
+  // Tous les événements serveur -> handleMsg
+  ['joined', 'inventory_update', 'player_list', 'gm_status', 'dice_result', 'voice_joined', 'voice_peer_joined', 'voice_peer_left', 'voice_signal', 'error'].forEach(evt => {
+    S.socket.on(evt, (data) => handleMsg({ type: evt, ...data }));
+  });
+}
+
+// Appuyer sur Entrée pour se connecter
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !document.getElementById('screen-login').classList.contains('hidden')) {
+    doConnect();
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Envoi de messages via Socket.io
+// ══════════════════════════════════════════════════════════════════════════════
+function send(msg) {
+  if (!S.socket) return;
+  const { type, ...data } = msg;
+  S.socket.emit(type, data);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Réception de messages
+// ══════════════════════════════════════════════════════════════════════════════
+function handleMsg(msg) {
+  switch (msg.type) {
+
+    case 'joined':
+      S.role = msg.role;
+      S.myId = msg.playerId || null;
+      S.myName = msg.name   || null;
+      document.getElementById('screen-login').classList.add('hidden');
+      if (msg.role === 'player') {
+        document.getElementById('screen-player').classList.remove('hidden');
+        document.getElementById('player-name-label').textContent = S.myName;
+      } else {
+        document.getElementById('screen-gm').classList.remove('hidden');
+      }
+      break;
+
+    case 'inventory_update':
+      S.inventory = msg.inventory;
+      S.gold      = msg.gold;
+      S.skills    = msg.skills || [];
+      renderPlayerInv();
+      renderPlayerSkills();
+      break;
+
+    case 'player_list':
+      // Reconstruire la map depuis le tableau
+      S.players = {};
+      msg.players.forEach(p => S.players[p.id] = p);
+      renderGmSidebar();
+      // Si un joueur était sélectionné, mettre à jour sa vue
+      if (S.selectedId && S.players[S.selectedId]) renderGmMain();
+      else if (S.selectedId && !S.players[S.selectedId]) {
+        // Le joueur sélectionné s'est déconnecté
+        S.selectedId = null;
+        document.getElementById('gm-main').innerHTML =
+          '<div class="gm-placeholder">← Sélectionnez un joueur</div>';
+      }
+      break;
+
+    case 'gm_status':
+      const badge = document.getElementById('gm-badge');
+      if (msg.online) {
+        badge.textContent = 'GM en ligne';
+        badge.className   = 'badge online';
+      } else {
+        badge.textContent = 'GM hors ligne';
+        badge.className   = 'badge offline';
+      }
+      break;
+
+    case 'dice_result':
+      handleDiceResult(msg);
+      break;
+
+    case 'voice_joined':
+      handleVoiceJoined(msg);
+      break;
+
+    case 'voice_peer_joined':
+      handleVoicePeerJoined(msg);
+      break;
+
+    case 'voice_peer_left':
+      handleVoicePeerLeft(msg);
+      break;
+
+    case 'voice_signal':
+      handleVoiceSignal(msg);
+      break;
+
+    case 'error':
+      document.getElementById('login-error').textContent = msg.message;
+      break;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Vue Joueur
+// ══════════════════════════════════════════════════════════════════════════════
+function renderPlayerInv() {
+  document.getElementById('gold-display').textContent = S.gold + ' po';
+  document.getElementById('gold-inp').value = S.gold;
+  document.getElementById('p-count').textContent = S.inventory.reduce((s,i) => s+i.qty, 0);
+
+  const list = document.getElementById('p-inv-list');
+  if (!S.inventory.length) {
+    list.innerHTML = '<div class="inv-empty">Votre inventaire est vide.</div>';
+    return;
+  }
+  list.innerHTML = S.inventory.map(item => buildItemRow(item, null)).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Compétences Joueur
+// ══════════════════════════════════════════════════════════════════════════════
+function renderPlayerSkills() {
+  const list = document.getElementById('p-skills-list');
+  if (!list) return;
+  if (!S.skills.length) {
+    list.innerHTML = '<div class="inv-empty" style="padding:.5rem">Aucune compétence.</div>';
+    return;
+  }
+  list.innerHTML = S.skills.map(s => `
+    <div class="skill-row">
+      <span class="skill-name">${esc(s.name)}</span>
+      <span class="skill-val">
+        <input type="number" min="0" max="999" value="${s.value}"
+               onchange="updateMySkill('${s.id}', this.value)" />
+      </span>
+      <button class="skill-del" onclick="removeMySkill('${s.id}')" title="Supprimer">✕</button>
+    </div>
+  `).join('');
+}
+
+function addMySkill() {
+  const name = document.getElementById('p-skill-name').value.trim();
+  const val  = document.getElementById('p-skill-val').value;
+  if (!name) return document.getElementById('p-skill-name').focus();
+  send({ type: 'add_skill', name, value: val });
+  document.getElementById('p-skill-name').value = '';
+  document.getElementById('p-skill-val').value = '1';
+}
+
+function updateMySkill(skillId, value) {
+  send({ type: 'update_skill', skillId, value });
+}
+
+function removeMySkill(skillId) {
+  send({ type: 'remove_skill', skillId });
+}
+
+function changeGold(delta) {
+  const inp = document.getElementById('gold-inp');
+  const v = Math.max(0, (parseInt(inp.value) || 0) + delta);
+  inp.value = v;
+  sendGold(v);
+}
+
+function sendGold(v, playerId) {
+  const msg = { type: 'update_gold', gold: Math.max(0, parseInt(v)||0) };
+  if (playerId) msg.playerId = playerId;
+  send(msg);
+}
+
+function addMyItem() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) return document.getElementById('p-name').focus();
+  send({
+    type: 'add_item',
+    name,
+    itemType: document.getElementById('p-type').value,
+    weight:   document.getElementById('p-weight').value,
+    value:    document.getElementById('p-value').value,
+  });
+  document.getElementById('p-name').value = '';
+  document.getElementById('p-weight').value = '';
+  document.getElementById('p-value').value  = '';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Vue GM
+// ══════════════════════════════════════════════════════════════════════════════
+function renderGmSidebar() {
+  const list   = Object.values(S.players);
+  const count  = list.length;
+  document.getElementById('gm-player-count').textContent =
+    count + ' joueur' + (count > 1 ? 's' : '') + ' connecté' + (count > 1 ? 's' : '');
+
+  const cards = document.getElementById('gm-player-cards');
+  if (!count) {
+    cards.innerHTML = '<p class="no-players">Aucun joueur<br>connecté.</p>';
+    return;
+  }
+  cards.innerHTML = list.map(p => `
+    <div class="player-card ${p.id === S.selectedId ? 'selected' : ''}"
+         onclick="selectPlayer('${p.id}')">
+      <div class="pname">${esc(p.name)}</div>
+      <div class="pmeta">
+        🪙 ${p.gold} po &nbsp;·&nbsp;
+        ${p.inventory.reduce((s,i) => s+i.qty, 0)} objet(s)
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectPlayer(id) {
+  S.selectedId = id;
+  renderGmSidebar();
+  renderGmMain();
+}
+
+function buildGmSkillsHtml(p) {
+  const skills = p.skills || [];
+  if (!skills.length) return '<div class="inv-empty" style="padding:.5rem">Aucune compétence.</div>';
+  return skills.map(s => `
+    <div class="skill-row">
+      <span class="skill-name">${esc(s.name)}</span>
+      <span class="skill-val">
+        <input type="number" min="0" max="999" value="${s.value}"
+               onchange="gmUpdateSkill('${p.id}','${s.id}',this.value)" />
+      </span>
+      <button class="skill-del" onclick="gmRemoveSkill('${p.id}','${s.id}')" title="Supprimer">✕</button>
+    </div>
+  `).join('');
+}
+
+function gmAddSkill(playerId) {
+  const name = document.getElementById('gm-skill-name').value.trim();
+  const val  = document.getElementById('gm-skill-val').value;
+  if (!name) return document.getElementById('gm-skill-name').focus();
+  send({ type: 'add_skill', playerId, name, value: val });
+  document.getElementById('gm-skill-name').value = '';
+  document.getElementById('gm-skill-val').value = '1';
+}
+
+function gmUpdateSkill(playerId, skillId, value) {
+  send({ type: 'update_skill', playerId, skillId, value });
+}
+
+function gmRemoveSkill(playerId, skillId) {
+  send({ type: 'remove_skill', playerId, skillId });
+}
+
+function renderGmMain() {
+  const p = S.players[S.selectedId];
+  if (!p) return;
+  const main = document.getElementById('gm-main');
+  main.innerHTML = `
+    <div class="gm-player-header">
+      <div>
+        <h2>🧙 ${esc(p.name)}</h2>
+      </div>
+      <div class="hmeta">
+        🪙 <input type="number" id="gm-gold-inp" value="${p.gold}" min="0"
+             style="width:80px;display:inline;color:var(--gold);font-weight:bold"
+             onchange="sendGold(this.value,'${p.id}')" />
+        <button class="qty-btn" onclick="gmChangeGold(-1,'${p.id}')">−</button>
+        <button class="qty-btn" onclick="gmChangeGold(+1,'${p.id}')">+</button>
+        po
+      </div>
+    </div>
+
+    <div class="add-section" style="margin-bottom:1rem">
+      <h3>✦ DONNER UN OBJET À ${esc(p.name).toUpperCase()}</h3>
+      <div class="add-grid">
+        <input id="gm-item-name"   placeholder="Nom..." />
+        <select id="gm-item-type">
+          <option value="arme">⚔ Arme</option>
+          <option value="armure">🛡 Armure</option>
+          <option value="potion">⚗ Potion</option>
+          <option value="magie">✨ Magie</option>
+          <option value="nourriture">🍖 Nourriture</option>
+          <option value="misc">💼 Divers</option>
+        </select>
+        <input id="gm-item-weight" type="number" min="0" step="0.1" placeholder="Poids (kg)" />
+        <input id="gm-item-value"  type="number" min="0" placeholder="Valeur (po)" />
+      </div>
+      <button class="btn" onclick="gmAddItem('${p.id}')" style="width:100%">+ Ajouter à l'inventaire</button>
+    </div>
+
+    <p class="section-label">INVENTAIRE (${p.inventory.reduce((s,i) => s+i.qty, 0)} objets)</p>
+    <div class="inv-list">
+      ${p.inventory.length
+        ? p.inventory.map(item => buildItemRow(item, p.id)).join('')
+        : '<div class="inv-empty">Inventaire vide.</div>'}
+    </div>
+
+    <!-- Compétences du joueur -->
+    <div class="add-section" style="margin-top:1rem">
+      <h3>✦ COMPÉTENCES DE ${esc(p.name).toUpperCase()}</h3>
+      <div id="gm-skills-list">${buildGmSkillsHtml(p)}</div>
+      <div class="add-skill-row">
+        <input id="gm-skill-name" placeholder="Nom de la compétence..." maxlength="30" />
+        <input id="gm-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
+        <button class="btn" onclick="gmAddSkill('${p.id}')">Ajouter</button>
+      </div>
+    </div>
+
+    <!-- Lancé de dés -->
+    <div class="dice-section">
+      <h3>🎲 LANCER DE DÉS</h3>
+      <div class="dice-input-row">
+        <input id="gm-dice-expr" placeholder="ex: 1d20, 2d6+3" onkeydown="if(event.key==='Enter')rollDice(true)" />
+        <button class="btn" onclick="rollDice(true)">Lancer</button>
+      </div>
+      <div class="dice-log" id="gm-dice-log"></div>
+    </div>
+  `;
+}
+
+function gmChangeGold(delta, playerId) {
+  const inp = document.getElementById('gm-gold-inp');
+  const v   = Math.max(0, (parseInt(inp.value) || 0) + delta);
+  inp.value = v;
+  sendGold(v, playerId);
+}
+
+function gmAddItem(playerId) {
+  const name = document.getElementById('gm-item-name').value.trim();
+  if (!name) return document.getElementById('gm-item-name').focus();
+  send({
+    type: 'add_item',
+    playerId,
+    name,
+    itemType: document.getElementById('gm-item-type').value,
+    weight:   document.getElementById('gm-item-weight').value,
+    value:    document.getElementById('gm-item-value').value,
+  });
+  document.getElementById('gm-item-name').value   = '';
+  document.getElementById('gm-item-weight').value = '';
+  document.getElementById('gm-item-value').value  = '';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Composant commun : ligne d'inventaire
+// playerId = null  → actions joueur (sur son propre inventaire)
+// playerId = '...' → actions GM sur ce joueur
+// ══════════════════════════════════════════════════════════════════════════════
+function buildItemRow(item, playerId) {
+  const pid = playerId ? `'${playerId}'` : 'null';
+  const w   = item.weight ? item.weight + ' kg' : '';
+  const v   = item.value  ? '🪙 ' + item.value + ' po' : '';
+  const meta = [w, v].filter(Boolean).join(' · ');
+  return `
+    <div class="item-row">
+      <div class="item-icon">${ICONS[item.itemType] || '💼'}</div>
+      <div class="item-info">
+        <div class="item-name">${esc(item.name)}</div>
+        ${meta ? `<div class="item-meta">${meta}</div>` : ''}
+      </div>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="changeQty('${item.id}', -1, ${pid})">−</button>
+        <span class="qty-val">${item.qty}</span>
+        <button class="qty-btn" onclick="changeQty('${item.id}', +1, ${pid})">+</button>
+      </div>
+      <button class="del-btn" onclick="removeItem('${item.id}', ${pid})" title="Retirer">✕</button>
+    </div>
+  `;
+}
+
+function changeQty(itemId, delta, playerId) {
+  // Trouver la quantité actuelle
+  const inv = playerId ? (S.players[playerId] || {}).inventory : S.inventory;
+  if (!inv) return;
+  const item = inv.find(i => i.id === itemId);
+  if (!item) return;
+  const newQty = Math.max(1, item.qty + delta);
+  const msg = { type: 'update_qty', itemId, qty: newQty };
+  if (playerId) msg.playerId = playerId;
+  send(msg);
+}
+
+function removeItem(itemId, playerId) {
+  const msg = { type: 'remove_item', itemId };
+  if (playerId) msg.playerId = playerId;
+  send(msg);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Lancé de dés
+// ══════════════════════════════════════════════════════════════════════════════
+function rollDice(isGm) {
+  const prefix = isGm ? 'gm' : 'p';
+  const inp = document.getElementById(prefix + '-dice-expr');
+  const expr = inp.value.trim();
+  if (!expr) return;
+  send({ type: 'roll_dice', expr });
+  inp.value = '';
+}
+
+function handleDiceResult(msg) {
+  const isPlayer = S.role === 'player';
+  const entry = buildDiceEntry(msg);
+
+  if (isPlayer) {
+    const log = document.getElementById('p-dice-log');
+    if (log) {
+      log.insertAdjacentHTML('afterbegin', entry);
+    }
+  } else {
+    // GM : ajoute au log
+    const log = document.getElementById('gm-dice-log');
+    if (log) {
+      log.insertAdjacentHTML('afterbegin', entry);
+    }
+  }
+}
+
+function buildDiceEntry(msg) {
+  const cls = msg.name === '👑 MJ' ? 'gm-roll' : '';
+  const rollStr = msg.rolls.join(', ');
+  let detail = `${msg.formula} : [${rollStr}]`;
+  if (msg.mod !== 0) {
+    detail += msg.mod > 0
+      ? ` +${msg.mod} = <span class="de-total">${msg.total}</span>`
+      : ` ${msg.mod} = <span class="de-total">${msg.total}</span>`;
+  } else {
+    detail += ` = <span class="de-total">${msg.total}</span>`;
+  }
+  return `<div class="dice-entry ${cls}">
+    <span class="de-roll">${esc(msg.name)}</span> → ${detail}
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Chat vocal (WebRTC)
+// ══════════════════════════════════════════════════════════════════════════════
+const VOICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+function getVoiceBtn() {
+  return document.getElementById(S.role === 'gm' ? 'gm-voice-btn' : 'p-voice-btn');
+}
+function getVoiceStatus() {
+  return document.getElementById(S.role === 'gm' ? 'gm-voice-status' : 'p-voice-status');
+}
+function getVoiceUsers() {
+  return document.getElementById(S.role === 'gm' ? 'gm-voice-users' : 'p-voice-users');
+}
+
+async function toggleVoice() {
+  if (S.voiceJoined) {
+    leaveVoice();
+  } else {
+    await joinVoice();
+  }
+}
+
+async function joinVoice() {
+  try {
+    S.voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (e) {
+    getVoiceStatus().textContent = '❌ Microphone inaccessible';
+    return;
+  }
+  S.voiceJoined = true;
+  getVoiceBtn().textContent = '🔇 Quitter';
+  getVoiceStatus().textContent = '✅ Connecté au vocal';
+  send({ type: 'voice_join' });
+}
+
+function leaveVoice() {
+  S.voiceJoined = false;
+  // Fermer toutes les connexions
+  Object.values(S.voicePeers).forEach(p => {
+    p.pc.close();
+  });
+  S.voicePeers = {};
+  if (S.voiceStream) {
+    S.voiceStream.getTracks().forEach(t => t.stop());
+    S.voiceStream = null;
+  }
+  getVoiceBtn().textContent = '🔊 Rejoindre';
+  getVoiceStatus().textContent = 'Microphone désactivé';
+  getVoiceUsers().innerHTML = '';
+  send({ type: 'voice_leave' });
+}
+
+function handleVoiceJoined(msg) {
+  // msg.peers = liste des participants déjà connectés
+  msg.peers.forEach(peer => createPeerConnection(peer.playerId, peer.name, true));
+  updateVoiceUsers();
+}
+
+function handleVoicePeerJoined(msg) {
+  createPeerConnection(msg.playerId, msg.name, true);
+  updateVoiceUsers();
+}
+
+function handleVoicePeerLeft(msg) {
+  const peer = S.voicePeers[msg.playerId];
+  if (peer) {
+    peer.pc.close();
+    delete S.voicePeers[msg.playerId];
+  }
+  updateVoiceUsers();
+}
+
+function handleVoiceSignal(msg) {
+  const { from, data } = msg;
+  let peer = S.voicePeers[from];
+
+  if (data.type === 'offer') {
+    // Nouvelle offre → créer une connexion si elle n'existe pas
+    if (!peer) {
+      // On ne connaît pas encore ce peer → créer une connexion entrante
+      createPeerConnection(from, data.name || 'Inconnu', false);
+      peer = S.voicePeers[from];
+    }
+    peer.pc.setRemoteDescription(new RTCSessionDescription(data))
+      .then(() => peer.pc.createAnswer())
+      .then(answer => peer.pc.setLocalDescription(answer))
+      .then(() => {
+        send({ type: 'voice_signal', to: from, data: peer.pc.localDescription });
+      })
+      .catch(e => console.error('answer error', e));
+  } else if (data.type === 'answer') {
+    peer.pc.setRemoteDescription(new RTCSessionDescription(data))
+      .catch(e => console.error('set remote answer error', e));
+  } else if (data.type === 'candidate') {
+    peer.pc.addIceCandidate(new RTCIceCandidate(data.candidate))
+      .catch(e => console.error('add ICE error', e));
+  }
+}
+
+function createPeerConnection(playerId, name, initiator) {
+  if (S.voicePeers[playerId]) return;
+
+  const pc = new RTCPeerConnection(VOICE_CONFIG);
+  S.voicePeers[playerId] = { playerId, name, pc };
+
+  // Ajouter notre flux audio
+  if (S.voiceStream) {
+    S.voiceStream.getTracks().forEach(track => pc.addTrack(track, S.voiceStream));
+  }
+
+  // Jouer le flux audio distant
+  pc.ontrack = (event) => {
+    const audio = document.createElement('audio');
+    audio.srcObject = event.streams[0];
+    audio.autoplay = true;
+    audio.controls = false;
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
+    // Jouer automatiquement après interaction utilisateur
+    audio.play().catch(() => {});
+  };
+
+  // ICE candidates
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      send({ type: 'voice_signal', to: playerId, data: { type: 'candidate', candidate: event.candidate } });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      const peer = S.voicePeers[playerId];
+      if (peer) {
+        peer.pc.close();
+        delete S.voicePeers[playerId];
+        updateVoiceUsers();
+      }
+    }
+  };
+
+  // Si on est l'initiateur, envoyer une offre
+  if (initiator) {
+    pc.createOffer()
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => {
+        // Inclure le nom dans le signal pour que le destinataire sache qui c'est
+        const data = { ...pc.localDescription, name: S.voiceJoined ? (S.myName || '👑 MJ') : '' };
+        send({ type: 'voice_signal', to: playerId, data });
+      })
+      .catch(e => console.error('offer error', e));
+  }
+
+  updateVoiceUsers();
+}
+
+function updateVoiceUsers() {
+  const container = getVoiceUsers();
+  if (!container) return;
+  const names = Object.values(S.voicePeers).map(p => p.name);
+  if (!names.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = names.map(n =>
+    `<span class="voice-user-badge">🎤 ${esc(n)}</span>`
+  ).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Utilitaires
+// ══════════════════════════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
