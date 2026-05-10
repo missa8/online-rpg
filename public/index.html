@@ -1286,26 +1286,25 @@ function renderMap(containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  if (!S.map.image) {
-    container.innerHTML = '<div class="map-empty">🗺️ Aucune carte chargée par le MJ.</div>';
-    return;
-  }
-
   const isGm = S.role === 'gm';
   let html = '';
 
   if (isGm) {
     html += `<div class="map-upload-bar">
-      <span>Changer la carte :</span>
+      <span>${S.map.image ? 'Changer la carte' : 'Importer une carte'} :</span>
       <input type="file" accept="image/*" id="map-file-input" onchange="handleMapUpload(this)" style="flex:1" />
-      <button class="btn danger" onclick="removeMap()">Retirer la carte</button>
+      ${S.map.image ? '<button class="btn danger" onclick="removeMap()">Retirer la carte</button>' : ''}
     </div>`;
   }
 
-  html += `<div class="map-container" id="map-display-${containerId}" onclick="handleMapClick(event, '${containerId}')">
-    <img src="${S.map.image}" alt="Carte" draggable="false" />
-    ${S.map.markers.map(m => renderMarkerHtml(m)).join('')}
-  </div>`;
+  if (!S.map.image) {
+    html += '<div class="map-empty">🗺️ Aucune carte chargée par le MJ.</div>';
+  } else {
+    html += `<div class="map-container" id="map-display-${containerId}" onclick="handleMapClick(event, '${containerId}')">
+      <img src="${S.map.image}" alt="Carte" draggable="false" />
+      ${S.map.markers.map(m => renderMarkerHtml(m)).join('')}
+    </div>`;
+  }
 
   container.innerHTML = html;
 }
