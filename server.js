@@ -15,8 +15,10 @@ const io     = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── État global ─────────────────────────────────────────────────────────────
+const DEFAULT_STATS = { hp: 100, maxHp: 100, thirst: 100, hunger: 100, sleep: 100, hygiene: 100 };
+
 const state = {
-  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId, skills: [] } }
+  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId, skills: [], stats } }
   gmSocketId: null,
   voiceUsers: {},  // { [playerId]: { playerId, name, socketId } }
   map: { image: null, markers: [] },
@@ -25,7 +27,7 @@ const state = {
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 function playerSnapshot() {
   return Object.entries(state.players).map(([id, p]) => ({
-    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills,
+    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills, stats: p.stats,
   }));
 }
 
@@ -38,7 +40,7 @@ function syncGm() {
 function syncPlayer(id) {
   const p = state.players[id];
   if (!p) return;
-  io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills });
+  io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
   syncGm();
 }
 
@@ -52,9 +54,9 @@ io.on('connection', (socket) => {
     if (!name) return socket.emit('error', { message: 'Nom invalide.' });
     myId   = crypto.randomUUID();
     myRole = 'player';
-    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [] };
+    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [], stats: { ...DEFAULT_STATS } };
     socket.emit('joined',           { role: 'player', playerId: myId, name });
-    socket.emit('inventory_update', { inventory: [], gold: 0 });
+    socket.emit('inventory_update', { inventory: [], gold: 0, stats: { ...DEFAULT_STATS } });
     socket.emit('gm_status',        { online: !!state.gmSocketId });
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
@@ -145,6 +147,23 @@ io.on('connection', (socket) => {
     if (!p) return;
     const skill = p.skills.find(s => s.id === skillId);
     if (skill) skill.value = Math.max(0, Math.min(999, parseInt(value) || 0));
+    syncPlayer(targetId);
+  });
+
+  // ─── Stats ─────────────────────────────────────────────────────────────────
+  socket.on('update_stat', ({ playerId, stat, value }) => {
+    const targetId = myRole === 'gm' ? playerId : myId;
+    const p = state.players[targetId];
+    if (!p || !p.stats) return;
+    const v = parseInt(value) || 0;
+    if (stat === 'hp') {
+      p.stats.hp = Math.max(0, Math.min(p.stats.maxHp || 100, v));
+    } else if (stat === 'maxHp') {
+      p.stats.maxHp = Math.max(1, v);
+      p.stats.hp = Math.min(p.stats.hp, p.stats.maxHp);
+    } else if (stat in p.stats) {
+      p.stats[stat] = Math.max(0, Math.min(100, v));
+    }
     syncPlayer(targetId);
   });
 

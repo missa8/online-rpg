@@ -274,6 +274,72 @@
       line-height: 1;
     }
     .map-marker:hover .map-marker-del { opacity: 1; }
+
+    /* ── Barres de stats ── */
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 12px 14px; margin-bottom: 1rem;
+    }
+    .stat-row { display: flex; flex-direction: column; gap: 2px; }
+    .stat-label {
+      font-size: 11px; color: var(--muted); letter-spacing: .5px;
+      display: flex; justify-content: space-between;
+    }
+    .stat-bar-bg {
+      height: 16px; background: var(--surface2); border-radius: 8px;
+      overflow: hidden; border: 1px solid var(--border);
+    }
+    .stat-bar-fill {
+      height: 100%; border-radius: 7px; transition: width .3s, background .3s;
+    }
+    .stat-bar-fill.hp   { background: #c0392b; }
+    .stat-bar-fill.thirst { background: #2980b9; }
+    .stat-bar-fill.hunger { background: #d4860b; }
+    .stat-bar-fill.sleep  { background: #8e44ad; }
+    .stat-bar-fill.hygiene { background: #27ae60; }
+    .stat-bar-fill.hp-bg   { background: #6b1a12; }
+    .stat-bar-fill.thirst-bg { background: #12456b; }
+    .stat-bar-fill.hunger-bg { background: #6b4a0b; }
+    .stat-bar-fill.sleep-bg  { background: #4a1a6b; }
+    .stat-bar-fill.hygiene-bg { background: #1a5a30; }
+    .stat-val { font-size: 11px; color: var(--text); font-weight: bold; }
+
+    /* ── Table des compétences ── */
+    .skill-table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); overflow: hidden;
+    }
+    .skill-table th {
+      background: var(--surface2); color: var(--muted); font-size: 11px;
+      letter-spacing: 1px; padding: 6px 10px; text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .skill-table td {
+      padding: 5px 10px; border-bottom: 1px solid var(--border);
+    }
+    .skill-table tr:last-child td { border-bottom: none; }
+    .skill-table tr:hover td { background: rgba(255,255,255,.03); }
+    .skill-table .s-name { color: var(--text); }
+    .skill-table .s-val {
+      color: var(--gold-l); font-weight: bold; text-align: center;
+      width: 60px;
+    }
+    .skill-table .s-del {
+      text-align: center; width: 30px;
+    }
+    .skill-table .s-del button {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 14px; padding: 2px 6px; border-radius: 4px;
+    }
+    .skill-table .s-del button:hover { color: #f55; background: rgba(139,32,32,.2); }
+    .skill-table input.s-edit {
+      width: 60px; text-align: center; padding: 3px 4px; font-size: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--gold-l); border-radius: 4px;
+    }
+    .skill-table input.s-edit:focus { border-color: var(--gold); outline: none; }
   </style>
 </head>
 <body>
@@ -321,6 +387,20 @@
       <button class="qty-btn" onclick="changeGold(+1)">+</button>
     </div>
 
+    <!-- Stats vitales -->
+    <div id="p-stats-grid" class="stats-grid"></div>
+
+    <!-- Compétences (table) -->
+    <div class="add-section" style="margin-bottom:1rem">
+      <h3>✦ COMPÉTENCES</h3>
+      <div id="p-skills-table"></div>
+      <div class="add-skill-row" style="margin-top:8px">
+        <input id="p-skill-name" placeholder="Nom de la compétence..." maxlength="30" />
+        <input id="p-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
+        <button class="btn" onclick="addMySkill()">Ajouter</button>
+      </div>
+    </div>
+
     <!-- Ajouter -->
     <div class="add-section">
       <h3>✦ AJOUTER UN OBJET</h3>
@@ -344,17 +424,6 @@
     <p class="section-label">INVENTAIRE (<span id="p-count">0</span> objets)</p>
     <div class="inv-list" id="p-inv-list">
       <div class="inv-empty">Votre inventaire est vide.</div>
-    </div>
-
-    <!-- Compétences -->
-    <div class="add-section" style="margin-top:1rem">
-      <h3>✦ COMPÉTENCES</h3>
-      <div id="p-skills-list"></div>
-      <div class="add-skill-row">
-        <input id="p-skill-name" placeholder="Nom de la compétence..." maxlength="30" />
-        <input id="p-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
-        <button class="btn" onclick="addMySkill()">Ajouter</button>
-      </div>
     </div>
 
     <!-- Lancé de dés -->
@@ -444,6 +513,7 @@ const S = {
   voiceStream: null,
   voicePeers: {},    // { playerId: { playerId, name, pc } }
   map: { image: null, markers: [] },
+  stats: null,
 };
 
 const ICONS = { arme:'⚔', armure:'🛡', potion:'⚗', magie:'✨', nourriture:'🍖', misc:'💼' };
@@ -538,8 +608,10 @@ function handleMsg(msg) {
       S.inventory = msg.inventory;
       S.gold      = msg.gold;
       S.skills    = msg.skills || [];
+      S.stats     = msg.stats || S.stats;
       renderPlayerInv();
-      renderPlayerSkills();
+      renderPlayerStats();
+      renderPlayerSkillsTable();
       break;
 
     case 'player_list':
@@ -626,26 +698,22 @@ function renderPlayerInv() {
   list.innerHTML = S.inventory.map(item => buildItemRow(item, null)).join('');
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Compétences Joueur
-// ══════════════════════════════════════════════════════════════════════════════
-function renderPlayerSkills() {
-  const list = document.getElementById('p-skills-list');
-  if (!list) return;
-  if (!S.skills.length) {
-    list.innerHTML = '<div class="inv-empty" style="padding:.5rem">Aucune compétence.</div>';
-    return;
-  }
-  list.innerHTML = S.skills.map(s => `
-    <div class="skill-row">
-      <span class="skill-name">${esc(s.name)}</span>
-      <span class="skill-val">
-        <input type="number" min="0" max="999" value="${s.value}"
-               onchange="updateMySkill('${s.id}', this.value)" />
-      </span>
-      <button class="skill-del" onclick="removeMySkill('${s.id}')" title="Supprimer">✕</button>
-    </div>
-  `).join('');
+function renderPlayerStats() {
+  const st = S.stats || { hp: 100, maxHp: 100, thirst: 100, hunger: 100, sleep: 100, hygiene: 100 };
+  const grid = document.getElementById('p-stats-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  grid.appendChild(htmlToEl(buildStatRow('❤️ HP', 'hp', st.hp, st.maxHp, null)));
+  grid.appendChild(htmlToEl(buildStatRow('💧 Soif', 'thirst', st.thirst, 100, null)));
+  grid.appendChild(htmlToEl(buildStatRow('🍖 Faim', 'hunger', st.hunger, 100, null)));
+  grid.appendChild(htmlToEl(buildStatRow('🛌 Sommeil', 'sleep', st.sleep, 100, null)));
+  grid.appendChild(htmlToEl(buildStatRow('🧼 Hygiène', 'hygiene', st.hygiene, 100, null)));
+}
+
+function renderPlayerSkillsTable() {
+  const container = document.getElementById('p-skills-table');
+  if (!container) return;
+  container.innerHTML = buildSkillTable(S.skills, null);
 }
 
 function addMySkill() {
@@ -663,6 +731,18 @@ function updateMySkill(skillId, value) {
 
 function removeMySkill(skillId) {
   send({ type: 'remove_skill', skillId });
+}
+
+function htmlToEl(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstChild;
+}
+
+function sendStat(playerId, stat, value) {
+  const msg = { type: 'update_stat', stat, value };
+  if (playerId) msg.playerId = playerId;
+  send(msg);
 }
 
 function changeGold(delta) {
@@ -725,19 +805,54 @@ function selectPlayer(id) {
   renderGmMain();
 }
 
-function buildGmSkillsHtml(p) {
-  const skills = p.skills || [];
-  if (!skills.length) return '<div class="inv-empty" style="padding:.5rem">Aucune compétence.</div>';
-  return skills.map(s => `
-    <div class="skill-row">
-      <span class="skill-name">${esc(s.name)}</span>
-      <span class="skill-val">
-        <input type="number" min="0" max="999" value="${s.value}"
-               onchange="gmUpdateSkill('${p.id}','${s.id}',this.value)" />
-      </span>
-      <button class="skill-del" onclick="gmRemoveSkill('${p.id}','${s.id}')" title="Supprimer">✕</button>
+function buildStatRow(label, stat, value, max, playerId) {
+  const pct = Math.round((value / max) * 100);
+  const cls = stat === 'hp' ? 'hp' : stat;
+  const bgCls = stat === 'hp' ? 'hp-bg' : stat + '-bg';
+  const isGm = S.role === 'gm';
+  const inp = isGm
+    ? `<input type="number" min="0" max="${max}" value="${value}"
+         style="width:50px;text-align:center;padding:2px 4px;font-size:11px"
+         onchange="sendStat('${playerId}','${stat}',this.value)" />`
+    : `<span class="stat-val">${value}/${max}</span>`;
+  return `<div class="stat-row">
+    <div class="stat-label">
+      <span>${label}</span>
+      ${inp}
     </div>
-  `).join('');
+    <div class="stat-bar-bg">
+      <div class="stat-bar-fill ${cls}" style="width:${pct}%"></div>
+    </div>
+  </div>`;
+}
+
+function buildSkillTable(skills, playerId) {
+  const list = skills || [];
+  if (!list.length) return '<div class="inv-empty" style="padding:.5rem">Aucune compétence.</div>';
+  const canEdit = S.role === 'gm' || !playerId;
+  const rows = list.map(s => {
+    const editFn = playerId
+      ? `gmUpdateSkill('${playerId}','${s.id}',this.value)`
+      : `updateMySkill('${s.id}',this.value)`;
+    const delFn = playerId
+      ? `gmRemoveSkill('${playerId}','${s.id}')`
+      : `removeMySkill('${s.id}')`;
+    const valHtml = canEdit
+      ? `<input class="s-edit" type="number" min="0" max="999" value="${s.value}" onchange="${editFn}" />`
+      : esc(s.value);
+    const del = canEdit
+      ? `<button onclick="${delFn}" title="Supprimer">✕</button>`
+      : '';
+    return `<tr>
+      <td class="s-name">${esc(s.name)}</td>
+      <td class="s-val">${valHtml}</td>
+      ${canEdit ? `<td class="s-del">${del}</td>` : ''}
+    </tr>`;
+  }).join('');
+  return `<table class="skill-table">
+    <tr><th>Compétence</th><th style="text-align:center">Valeur</th>${canEdit ? '<th></th>' : ''}</tr>
+    ${rows}
+  </table>`;
 }
 
 function gmAddSkill(playerId) {
@@ -761,6 +876,7 @@ function renderGmMain() {
   const p = S.players[S.selectedId];
   if (!p) return;
   const main = document.getElementById('gm-main');
+  const st = p.stats || { hp: 100, maxHp: 100, thirst: 100, hunger: 100, sleep: 100, hygiene: 100 };
   main.innerHTML = `
     <div class="gm-player-header">
       <div>
@@ -774,6 +890,14 @@ function renderGmMain() {
         <button class="qty-btn" onclick="gmChangeGold(+1,'${p.id}')">+</button>
         po
       </div>
+    </div>
+
+    <div class="stats-grid">
+      ${buildStatRow('HP', 'hp', st.hp, st.maxHp, p.id)}
+      ${buildStatRow('Soif', 'thirst', st.thirst, 100, p.id)}
+      ${buildStatRow('Faim', 'hunger', st.hunger, 100, p.id)}
+      ${buildStatRow('Sommeil', 'sleep', st.sleep, 100, p.id)}
+      ${buildStatRow('Hygiène', 'hygiene', st.hygiene, 100, p.id)}
     </div>
 
     <div class="add-section" style="margin-bottom:1rem">
@@ -801,10 +925,9 @@ function renderGmMain() {
         : '<div class="inv-empty">Inventaire vide.</div>'}
     </div>
 
-    <!-- Compétences du joueur -->
     <div class="add-section" style="margin-top:1rem">
       <h3>✦ COMPÉTENCES DE ${esc(p.name).toUpperCase()}</h3>
-      <div id="gm-skills-list">${buildGmSkillsHtml(p)}</div>
+      ${buildSkillTable(p.skills, p.id)}
       <div class="add-skill-row">
         <input id="gm-skill-name" placeholder="Nom de la compétence..." maxlength="30" />
         <input id="gm-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
@@ -812,7 +935,6 @@ function renderGmMain() {
       </div>
     </div>
 
-    <!-- Lancé de dés -->
     <div class="dice-section">
       <h3>🎲 LANCER DE DÉS</h3>
       <div class="dice-input-row">
