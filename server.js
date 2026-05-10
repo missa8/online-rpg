@@ -16,9 +16,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── État global ─────────────────────────────────────────────────────────────
 const state = {
-  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId } }
+  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId, skills: [] } }
   gmSocketId: null,
   voiceUsers: {},  // { [playerId]: { playerId, name, socketId } }
+  map: { image: null, markers: [] },
 };
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ io.on('connection', (socket) => {
     socket.emit('joined',           { role: 'player', playerId: myId, name });
     socket.emit('inventory_update', { inventory: [], gold: 0 });
     socket.emit('gm_status',        { online: !!state.gmSocketId });
+    if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
     console.log(`[+] Joueur : ${name}`);
   });
@@ -69,6 +71,7 @@ io.on('connection', (socket) => {
     state.gmSocketId = socket.id;
     myRole = 'gm';
     socket.emit('joined', { role: 'gm' });
+    if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
     Object.values(state.players).forEach(p =>
       io.to(p.socketId).emit('gm_status', { online: true })
@@ -251,6 +254,40 @@ io.on('connection', (socket) => {
       from: myId,
       data,
     });
+  });
+
+  // ─── Carte / Marqueurs ─────────────────────────────────────────────────────
+  socket.on('map_upload', ({ image }) => {
+    if (myRole !== 'gm') return;
+    state.map.image = image;
+    if (!image) state.map.markers = [];
+    io.emit('map_update', { image: state.map.image, markers: state.map.markers });
+    console.log('[🗺️] Carte mise à jour par le MJ');
+  });
+
+  socket.on('map_add_marker', ({ x, y, label }) => {
+    const playerName = myRole === 'gm' ? '👑 MJ' : (state.players[myId]?.name || 'Inconnu');
+    const marker = {
+      id: crypto.randomUUID(),
+      x: parseFloat(x) || 0,
+      y: parseFloat(y) || 0,
+      label: String(label || '').trim().slice(0, 50),
+      playerId: myId || 'gm',
+      playerName,
+      timestamp: Date.now(),
+    };
+    state.map.markers.push(marker);
+    io.emit('map_marker_added', { marker });
+    console.log(`[🗺️] Marqueur ajouté par ${playerName} : ${marker.label}`);
+  });
+
+  socket.on('map_remove_marker', ({ markerId }) => {
+    const idx = state.map.markers.findIndex(m => m.id === markerId);
+    if (idx === -1) return;
+    const marker = state.map.markers[idx];
+    if (myRole !== 'gm' && marker.playerId !== myId) return;
+    state.map.markers.splice(idx, 1);
+    io.emit('map_marker_removed', { markerId });
   });
 
   socket.on('disconnect', () => {
