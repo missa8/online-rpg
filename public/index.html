@@ -1294,8 +1294,8 @@ function renderMap(containerId) {
       <span>${S.map.image ? 'Changer la carte' : 'Importer une carte'} :</span>
       <input type="file" accept="image/*" id="map-file-input" onchange="handleMapUpload(this)" style="flex:1" />
       ${S.map.image ? '<button class="btn danger" onclick="removeMap()">Retirer la carte</button>' : ''}
-    </div>`;
-  }
+    </div>
+    <p id="map-upload-err" style="font-size:12px;color:#f08080;font-style:italic;margin:4px 0 8px;min-height:16px"></p>`;
 
   if (!S.map.image) {
     html += '<div class="map-empty">🗺️ Aucune carte chargée par le MJ.</div>';
@@ -1335,9 +1335,28 @@ function handleMapClick(event, containerId) {
 function handleMapUpload(input) {
   const file = input.files[0];
   if (!file) return;
+
+  const err = document.getElementById('map-upload-err');
+  if (err) err.textContent = '';
+
+  if (!file.type.startsWith('image/')) {
+    if (err) err.textContent = '❌ Le fichier doit être une image.';
+    return input.value = '';
+  }
+
+  const MAX_MB = 10;
+  if (file.size > MAX_MB * 1024 * 1024) {
+    if (err) err.textContent = `❌ L'image est trop lourde (max ${MAX_MB} Mo).`;
+    return input.value = '';
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
     send({ type: 'map_upload', image: e.target.result });
+    input.value = '';
+  };
+  reader.onerror = () => {
+    if (err) err.textContent = '❌ Erreur de lecture du fichier.';
     input.value = '';
   };
   reader.readAsDataURL(file);
