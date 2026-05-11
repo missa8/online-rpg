@@ -281,7 +281,7 @@ io.on('connection', (socket) => {
     if (!text) return;
     const name = myRole === 'gm' ? '👑 MJ' : (state.players[myId]?.name || 'Inconnu');
     const payload = { from: myId, name, text, timestamp: Date.now() };
-    io.emit('chat_message', payload);
+    socket.broadcast.emit('chat_message', payload);
     console.log(`[💬] ${name}: ${text}`);
   });
 

@@ -1120,6 +1120,8 @@ function sendChat() {
   const inp = document.getElementById(prefix + '-chat-inp');
   const text = inp.value.trim();
   if (!text) return;
+  const name = S.role === 'gm' ? '👑 MJ' : (S.myName || 'Moi');
+  appendChat({ name, text, timestamp: Date.now() });
   send({ type: 'chat_message', text });
   inp.value = '';
 }
