@@ -218,6 +218,30 @@
     }
     .voice-user-badge.talking { border-color: #6af09a; background: #0e2e18; }
 
+    /* ── Chat texte ── */
+    .chat-section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; margin-top: 1rem;
+    }
+    .chat-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
+    .chat-log {
+      max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+      background: rgba(0,0,0,.25); border-radius: var(--r); padding: 8px;
+      margin-bottom: 8px; font-size: 13px;
+    }
+    .chat-log:empty { display: none; }
+    .chat-msg {
+      padding: 3px 8px; border-radius: 4px;
+      border-left: 3px solid var(--muted);
+    }
+    .chat-msg .chat-name { font-weight: bold; color: var(--gold-l); }
+    .chat-msg.gm-msg { border-left-color: var(--red); }
+    .chat-msg.gm-msg .chat-name { color: #f08080; }
+    .chat-msg .chat-time { font-size: 10px; color: var(--muted); margin-left: 6px; }
+    .chat-input-row { display: flex; gap: 8px; }
+    .chat-input-row input { flex: 1; }
+    .chat-input-row .btn { flex-shrink: 0; }
+
     /* ── Onglets ── */
     .top-tabs { display: flex; gap: 4px; align-items: center; }
     .top-tab {
@@ -445,6 +469,17 @@
       </div>
       <div class="voice-users" id="p-voice-users"></div>
     </div>
+
+    <!-- Chat texte -->
+    <div class="chat-section">
+      <h3>💬 CHAT</h3>
+      <div class="chat-log" id="p-chat-log"></div>
+      <div class="chat-input-row">
+        <input id="p-chat-inp" placeholder="Écrire un message..." maxlength="500"
+               onkeydown="if(event.key==='Enter')sendChat()" />
+        <button class="btn" onclick="sendChat()">Envoyer</button>
+      </div>
+    </div>
   </div>
 
   <!-- Onglet Carte du joueur -->
@@ -495,6 +530,19 @@
         <span class="voice-status" id="gm-voice-status">Microphone désactivé</span>
       </div>
       <div class="voice-users" id="gm-voice-users"></div>
+    </div>
+  </div>
+
+  <!-- Chat texte (toujours visible) -->
+  <div class="chat-section" style="border-radius:0;margin:0;border-left:none;border-right:none;border-bottom:none">
+    <div style="max-width:1000px;margin:0 auto">
+      <h3>💬 CHAT</h3>
+      <div class="chat-log" id="gm-chat-log"></div>
+      <div class="chat-input-row">
+        <input id="gm-chat-inp" placeholder="Écrire un message..." maxlength="500"
+               onkeydown="if(event.key==='Enter')sendChat()" />
+        <button class="btn" onclick="sendChat()">Envoyer</button>
+      </div>
     </div>
   </div>
 </div>
@@ -564,7 +612,7 @@ function doConnect() {
   });
 
   // Tous les événements serveur -> handleMsg
-  ['joined', 'inventory_update', 'player_list', 'gm_status', 'dice_result', 'voice_joined', 'voice_peer_joined', 'voice_peer_left', 'voice_signal', 'error', 'map_update', 'map_marker_added', 'map_marker_removed'].forEach(evt => {
+  ['joined', 'inventory_update', 'player_list', 'gm_status', 'dice_result', 'voice_joined', 'voice_peer_joined', 'voice_peer_left', 'voice_signal', 'error', 'map_update', 'map_marker_added', 'map_marker_removed', 'chat_message'].forEach(evt => {
     S.socket.on(evt, (data) => handleMsg({ type: evt, ...data }));
   });
 }
@@ -678,6 +726,10 @@ function handleMsg(msg) {
     case 'map_marker_removed':
       S.map.markers = S.map.markers.filter(m => m.id !== msg.markerId);
       renderCurrentMap();
+      break;
+
+    case 'chat_message':
+      appendChat(msg);
       break;
   }
 }
@@ -1058,6 +1110,34 @@ function buildDiceEntry(msg) {
   return `<div class="dice-entry ${cls}">
     <span class="de-roll">${esc(msg.name)}</span> → ${detail}
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Chat texte
+// ══════════════════════════════════════════════════════════════════════════════
+function sendChat() {
+  const prefix = S.role === 'gm' ? 'gm' : 'p';
+  const inp = document.getElementById(prefix + '-chat-inp');
+  const text = inp.value.trim();
+  if (!text) return;
+  send({ type: 'chat_message', text });
+  inp.value = '';
+}
+
+function appendChat(msg) {
+  const prefix = S.role === 'gm' ? 'gm' : 'p';
+  const log = document.getElementById(prefix + '-chat-log');
+  if (!log) return;
+  const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const cls = msg.name === '👑 MJ' ? 'chat-msg gm-msg' : 'chat-msg';
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = `<span class="chat-name">${esc(msg.name)}</span>`
+    + ` <span>${esc(msg.text)}</span>`
+    + ` <span class="chat-time">${time}</span>`;
+  log.insertAdjacentElement('afterbegin', el);
+  // Limiter à 100 messages
+  while (log.children.length > 100) log.lastChild.remove();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

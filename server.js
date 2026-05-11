@@ -275,6 +275,16 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ─── Chat texte ────────────────────────────────────────────────────────────
+  socket.on('chat_message', ({ text }) => {
+    text = String(text || '').trim().slice(0, 500);
+    if (!text) return;
+    const name = myRole === 'gm' ? '👑 MJ' : (state.players[myId]?.name || 'Inconnu');
+    const payload = { from: myId, name, text, timestamp: Date.now() };
+    io.emit('chat_message', payload);
+    console.log(`[💬] ${name}: ${text}`);
+  });
+
   // ─── Carte / Marqueurs ─────────────────────────────────────────────────────
   socket.on('map_upload', ({ image }) => {
     if (myRole !== 'gm') return;
