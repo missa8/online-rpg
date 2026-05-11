@@ -27,7 +27,7 @@ const state = {
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 function playerSnapshot() {
   return Object.entries(state.players).map(([id, p]) => ({
-    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills, stats: p.stats, online: p.online === true,
+    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills, stats: p.stats,
   }));
 }
 
@@ -40,7 +40,7 @@ function syncGm() {
 function syncPlayer(id) {
   const p = state.players[id];
   if (!p) return;
-  if (p.socketId) io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
+  io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
   syncGm();
 }
 
@@ -49,30 +49,12 @@ io.on('connection', (socket) => {
   let myId   = null;
   let myRole = null;
 
-  socket.on('join', ({ name, reconnectId }) => {
+  socket.on('join', ({ name }) => {
     name = String(name || '').trim().slice(0, 30);
     if (!name) return socket.emit('error', { message: 'Nom invalide.' });
-
-    // Reconnexion : restaure l'inventaire, les stats, les compétences
-    if (reconnectId && state.players[reconnectId]) {
-      const p = state.players[reconnectId];
-      p.name     = name;
-      p.socketId = socket.id;
-      p.online   = true;
-      myId   = reconnectId;
-      myRole = 'player';
-      socket.emit('joined',           { role: 'player', playerId: myId, name });
-      socket.emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
-      socket.emit('gm_status',        { online: !!state.gmSocketId });
-      if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
-      syncGm();
-      console.log(`[+] Joueur reconnecté : ${name}`);
-      return;
-    }
-
     myId   = crypto.randomUUID();
     myRole = 'player';
-    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [], stats: { ...DEFAULT_STATS }, online: true };
+    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [], stats: { ...DEFAULT_STATS } };
     socket.emit('joined',           { role: 'player', playerId: myId, name });
     socket.emit('inventory_update', { inventory: [], gold: 0, stats: { ...DEFAULT_STATS } });
     socket.emit('gm_status',        { online: !!state.gmSocketId });
@@ -95,7 +77,7 @@ io.on('connection', (socket) => {
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
     Object.values(state.players).forEach(p =>
-      p.socketId && io.to(p.socketId).emit('gm_status', { online: true })
+      io.to(p.socketId).emit('gm_status', { online: true })
     );
     console.log('[+] Maître du Jeu connecté');
   });
@@ -166,6 +148,28 @@ io.on('connection', (socket) => {
     if (!p) return;
     const skill = p.skills.find(s => s.id === skillId);
     if (skill) skill.value = Math.max(0, Math.min(999, parseInt(value) || 0));
+    syncPlayer(targetId);
+  });
+
+  // ─── Consommation ─────────────────────────────────────────────────────────
+  socket.on('consume_item', ({ playerId, itemId, itemType }) => {
+    const targetId = myRole === 'gm' ? playerId : myId;
+    const p = state.players[targetId];
+    if (!p || !p.stats) return;
+    const item = p.inventory.find(i => i.id === itemId);
+    if (!item || item.qty < 1) return;
+    const restore = { nourriture: 25, eau: 25, medicament: 20, potion: 30 };
+    const amount = restore[itemType];
+    if (!amount) return;
+    const map = { nourriture: 'hunger', eau: 'thirst', medicament: 'hp', potion: 'hp' };
+    const stat = map[itemType];
+    if (stat === 'hp') {
+      p.stats.hp = Math.min(p.stats.maxHp || 100, p.stats.hp + amount);
+    } else {
+      p.stats[stat] = Math.min(100, p.stats[stat] + amount);
+    }
+    item.qty -= 1;
+    if (item.qty <= 0) p.inventory = p.inventory.filter(i => i.id !== itemId);
     syncPlayer(targetId);
   });
 
@@ -351,12 +355,11 @@ io.on('connection', (socket) => {
       state.gmSocketId = null;
       console.log('[-] Maître du Jeu déconnecté');
       Object.values(state.players).forEach(p =>
-        p.socketId && io.to(p.socketId).emit('gm_status', { online: false })
+        io.to(p.socketId).emit('gm_status', { online: false })
       );
     } else if (myId && state.players[myId]) {
-      console.log(`[-] Joueur déconnecté : ${state.players[myId].name} (inventaire conservé)`);
-      state.players[myId].online = false;
-      state.players[myId].socketId = null;
+      console.log(`[-] Joueur déconnecté : ${state.players[myId].name}`);
+      delete state.players[myId];
       syncGm();
     }
   });

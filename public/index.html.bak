@@ -162,6 +162,12 @@
       display: flex; align-items: center; justify-content: center; transition: all .15s;
     }
     .del-btn:hover { border-color: var(--red); color: #f55; background: rgba(139,32,32,.2); }
+    .consume-btn {
+      background: none; border: 1px solid var(--border); color: var(--gold-l);
+      width: 30px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    .consume-btn:hover { border-color: var(--green); background: rgba(30,90,42,.2); }
 
     /* ── ÉCRAN GM ── */
     #screen-gm { display: flex; flex-direction: column; min-height: 100vh; }
@@ -182,7 +188,6 @@
     }
     .player-card:hover { border-color: var(--amber); box-shadow: 0 2px 8px var(--shadow); }
     .player-card.selected { border-color: var(--gold); background: #2e2210; box-shadow: 0 0 12px #c9a22722; }
-    .player-card.offline { opacity: .55; }
     .player-card .pname { font-size: 14px; color: var(--text); }
     .player-card .pmeta { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
     .no-players { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; padding: 1.5rem 8px; }
@@ -500,6 +505,8 @@
           <option value="potion">⚗ Potion</option>
           <option value="magie">✨ Magie</option>
           <option value="nourriture">🍖 Nourriture</option>
+          <option value="eau">💧 Eau</option>
+          <option value="medicament">💊 Médicament</option>
           <option value="misc">💼 Divers</option>
         </select>
         <input id="p-weight" type="number" min="0" step="0.1" placeholder="Poids (kg)" />
@@ -628,7 +635,7 @@ const S = {
   stats: null,
 };
 
-const ICONS = { arme:'⚔', armure:'🛡', potion:'⚗', magie:'✨', nourriture:'🍖', misc:'💼' };
+const ICONS = { arme:'⚔', armure:'🛡', potion:'⚗', magie:'✨', nourriture:'🍖', eau:'💧', medicament:'💊', misc:'💼' };
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Connexion
@@ -661,7 +668,7 @@ function doConnect() {
   S.socket.on('connect', () => {
     err.textContent = '';
     if (selectedRole === 'player') {
-      S.socket.emit('join', { name: S._pendingName, reconnectId: localStorage.getItem('rpg_playerId') });
+      S.socket.emit('join', { name: S._pendingName });
     } else {
       S.socket.emit('join_gm', { password: S._pendingPass });
     }
@@ -707,7 +714,6 @@ function handleMsg(msg) {
       S.role = msg.role;
       S.myId = msg.playerId || null;
       S.myName = msg.name   || null;
-      if (msg.playerId) localStorage.setItem('rpg_playerId', msg.playerId);
       document.getElementById('screen-login').classList.add('hidden');
       if (msg.role === 'player') {
         document.getElementById('screen-player').classList.remove('hidden');
@@ -895,10 +901,9 @@ function addMyItem() {
 // ══════════════════════════════════════════════════════════════════════════════
 function renderGmSidebar() {
   const list   = Object.values(S.players);
-  const online = list.filter(p => p.online).length;
   const count  = list.length;
   document.getElementById('gm-player-count').textContent =
-    online + '/' + count + ' connecté' + (online > 1 ? 's' : '');
+    count + ' joueur' + (count > 1 ? 's' : '') + ' connecté' + (count > 1 ? 's' : '');
 
   const cards = document.getElementById('gm-player-cards');
   if (!count) {
@@ -906,9 +911,9 @@ function renderGmSidebar() {
     return;
   }
   cards.innerHTML = list.map(p => `
-    <div class="player-card ${p.id === S.selectedId ? 'selected' : ''} ${!p.online ? 'offline' : ''}"
+    <div class="player-card ${p.id === S.selectedId ? 'selected' : ''}"
          onclick="selectPlayer('${p.id}')">
-      <div class="pname">${esc(p.name)} ${p.online ? '' : '💤'}</div>
+      <div class="pname">${esc(p.name)}</div>
       <div class="pmeta">
         🪙 ${p.gold} po &nbsp;·&nbsp;
         ${p.inventory.reduce((s,i) => s+i.qty, 0)} objet(s)
@@ -1028,6 +1033,8 @@ function renderGmMain() {
           <option value="potion">⚗ Potion</option>
           <option value="magie">✨ Magie</option>
           <option value="nourriture">🍖 Nourriture</option>
+          <option value="eau">💧 Eau</option>
+          <option value="medicament">💊 Médicament</option>
           <option value="misc">💼 Divers</option>
         </select>
         <input id="gm-item-weight" type="number" min="0" step="0.1" placeholder="Poids (kg)" />
@@ -1097,6 +1104,10 @@ function buildItemRow(item, playerId) {
   const w   = item.weight ? item.weight + ' kg' : '';
   const v   = item.value  ? '🪙 ' + item.value + ' po' : '';
   const meta = [w, v].filter(Boolean).join(' · ');
+  const consumable = ['nourriture','eau','medicament','potion'].includes(item.itemType);
+  const consumeBtn = consumable
+    ? `<button class="consume-btn" onclick="consumeItem('${item.id}', ${pid})" title="Consommer">🍴</button>`
+    : '';
   return `
     <div class="item-row">
       <div class="item-icon">${ICONS[item.itemType] || '💼'}</div>
@@ -1104,6 +1115,7 @@ function buildItemRow(item, playerId) {
         <div class="item-name">${esc(item.name)}</div>
         ${meta ? `<div class="item-meta">${meta}</div>` : ''}
       </div>
+      ${consumeBtn}
       <div class="qty-ctrl">
         <button class="qty-btn" onclick="changeQty('${item.id}', -1, ${pid})">−</button>
         <span class="qty-val">${item.qty}</span>
@@ -1128,6 +1140,16 @@ function changeQty(itemId, delta, playerId) {
 
 function removeItem(itemId, playerId) {
   const msg = { type: 'remove_item', itemId };
+  if (playerId) msg.playerId = playerId;
+  send(msg);
+}
+
+function consumeItem(itemId, playerId) {
+  const inv = playerId ? (S.players[playerId] || {}).inventory : S.inventory;
+  if (!inv) return;
+  const item = inv.find(i => i.id === itemId);
+  if (!item || item.qty < 1) return;
+  const msg = { type: 'consume_item', itemId, itemType: item.itemType };
   if (playerId) msg.playerId = playerId;
   send(msg);
 }
