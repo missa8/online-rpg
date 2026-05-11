@@ -6,14 +6,33 @@
   <title>Inventaire JdR</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
+    @keyframes flicker {
+      0%, 100% { text-shadow: 0 0 4px #c9a22744, 0 0 12px #c9a22722; }
+      50%      { text-shadow: 0 0 8px #c9a22766, 0 0 20px #c9a22733; }
+    }
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 6px #c9a22722, inset 0 0 6px #c9a22711; }
+      50%      { box-shadow: 0 0 14px #c9a22744, inset 0 0 12px #c9a22722; }
+    }
     :root {
       --bg: #12100e; --surface: #1e1812; --surface2: #2a2016;
       --border: #3d2f1a; --gold: #c9a227; --gold-l: #e8c547;
       --amber: #6a4010; --text: #e0d0b0; --muted: #8a7a5a;
       --red: #8b2020; --green: #1e5a2a; --r: 7px;
+      --parchment: rgba(224, 208, 176, .04);
+      --shadow: rgba(0,0,0,.6);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: Georgia, serif; min-height: 100vh; }
+    body {
+      background: radial-gradient(ellipse at 50% 0%, #2a1f12 0%, #12100e 60%, #0d0b09 100%);
+      color: var(--text); font-family: Georgia, serif; min-height: 100vh;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.06) 2px, rgba(0,0,0,.06) 4px);
+      z-index: 9999;
+    }
+    ::selection { background: #c9a22744; color: var(--gold-l); }
 
     /* ── Utilitaires ── */
     .hidden { display: none !important; }
@@ -26,13 +45,17 @@
     input::placeholder { color: var(--muted); }
     select option { background: var(--surface2); }
     .btn {
-      border: 1px solid var(--border); background: var(--amber); color: var(--gold-l);
-      padding: 8px 16px; border-radius: var(--r); cursor: pointer; font-size: 13px;
-      letter-spacing: .5px; transition: background .2s;
+      border: 1px solid var(--border); background: linear-gradient(180deg, var(--amber) 0%, #4a2e0a 100%);
+      color: var(--gold-l); padding: 8px 20px; border-radius: var(--r); cursor: pointer;
+      font-size: 13px; letter-spacing: .5px; transition: all .2s;
+      box-shadow: 0 2px 6px var(--shadow);
     }
-    .btn:hover { background: #8a5520; }
-    .btn.danger { background: #4a1010; border-color: var(--red); color: #f08080; }
-    .btn.danger:hover { background: #6a1818; }
+    .btn:hover {
+      background: linear-gradient(180deg, #8a5520 0%, #5a3a10 100%);
+      border-color: var(--gold); box-shadow: 0 2px 12px #c9a22733;
+    }
+    .btn.danger { background: linear-gradient(180deg, #5a1414 0%, #3a0a0a 100%); border-color: var(--red); color: #f08080; }
+    .btn.danger:hover { background: linear-gradient(180deg, #7a1c1c 0%, #4a0e0e 100%); }
     .badge {
       font-size: 11px; padding: 2px 8px; border-radius: 10px;
       background: var(--surface2); border: 1px solid var(--border);
@@ -46,12 +69,24 @@
       min-height: 100vh; padding: 2rem;
     }
     .login-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 2rem 2.5rem; width: 100%; max-width: 420px;
+      background: linear-gradient(135deg, var(--surface) 0%, #221a12 100%);
+      border: 1px solid var(--border); border-radius: 14px;
+      padding: 2rem 2.5rem; width: 100%; max-width: 420px;
+      box-shadow: 0 8px 32px var(--shadow), inset 0 1px 0 rgba(201,162,39,.08);
+      position: relative;
+    }
+    .login-box::before {
+      content: '◆'; position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+      color: var(--gold); font-size: 18px; opacity: .5;
+    }
+    .login-box::after {
+      content: '◆'; position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+      color: var(--gold); font-size: 18px; opacity: .5;
     }
     .login-title {
-      font-size: 22px; color: var(--gold); text-align: center;
-      letter-spacing: 3px; margin-bottom: 4px;
+      font-size: 26px; color: var(--gold); text-align: center;
+      letter-spacing: 4px; margin-bottom: 2px;
+      animation: flicker 3s ease-in-out infinite;
     }
     .login-sub { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; margin-bottom: 1.5rem; }
     .role-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.25rem; }
@@ -67,10 +102,12 @@
 
     /* ── HEADER COMMUN ── */
     .top-bar {
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      padding: 10px 20px; display: flex; align-items: center; justify-content: space-between;
+      background: linear-gradient(180deg, #1e1812 0%, #16100a 100%);
+      border-bottom: 2px solid var(--border); padding: 10px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 12px var(--shadow);
     }
-    .top-bar h1 { font-size: 16px; color: var(--gold); letter-spacing: 2px; }
+    .top-bar h1 { font-size: 16px; color: var(--gold); letter-spacing: 3px; animation: flicker 4s ease-in-out infinite; }
     .top-bar .right { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 
     /* ── ÉCRAN JOUEUR ── */
@@ -78,17 +115,20 @@
     .player-body { padding: 1.25rem; max-width: 680px; margin: 0 auto; width: 100%; }
 
     .gold-bar {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, #1e1812 0%, #221810 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 10px 14px; display: flex; align-items: center; gap: 10px;
-      margin-bottom: 1rem;
+      margin-bottom: 1rem; box-shadow: 0 2px 8px var(--shadow);
     }
     .gold-bar span { font-size: 13px; color: var(--muted); }
-    .gold-bar .amount { font-size: 20px; color: var(--gold); font-weight: bold; flex: 1; }
+    .gold-bar .amount { font-size: 20px; color: var(--gold); font-weight: bold; flex: 1; text-shadow: 0 0 6px #c9a22733; }
     .gold-bar input[type=number] { width: 80px; text-align: center; color: var(--gold); font-weight: bold; }
 
     .add-section {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 12px 14px; margin-bottom: 1rem;
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 14px 16px; margin-bottom: 1rem;
+      box-shadow: 0 2px 8px var(--shadow), inset 0 1px 0 rgba(201,162,39,.04);
     }
     .add-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 10px; }
     .add-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -98,11 +138,12 @@
     .inv-empty { text-align: center; color: var(--muted); font-style: italic; padding: 2rem; font-size: 14px; }
 
     .item-row {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 9px 12px; display: flex; align-items: center; gap: 10px;
-      transition: border-color .2s;
+      transition: all .2s;
     }
-    .item-row:hover { border-color: var(--amber); }
+    .item-row:hover { border-color: var(--amber); box-shadow: 0 0 10px #6a401022; }
     .item-icon { font-size: 20px; width: 32px; text-align: center; flex-shrink: 0; }
     .item-info { flex: 1; min-width: 0; }
     .item-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -128,17 +169,19 @@
 
     .player-sidebar {
       width: 230px; flex-shrink: 0;
-      background: var(--surface); border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, #1e1812 0%, #16100a 100%);
+      border-right: 2px solid var(--border);
       display: flex; flex-direction: column;
     }
     .sidebar-title { font-size: 11px; color: var(--muted); letter-spacing: 1.5px; padding: 12px 14px 8px; }
     .player-cards { flex: 1; overflow-y: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 6px; }
     .player-card {
       background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r);
-      padding: 9px 11px; cursor: pointer; transition: all .2s;
+      padding: 10px 12px; cursor: pointer; transition: all .2s;
+      box-shadow: 0 1px 4px var(--shadow);
     }
-    .player-card:hover { border-color: var(--amber); }
-    .player-card.selected { border-color: var(--gold); background: #2e2210; }
+    .player-card:hover { border-color: var(--amber); box-shadow: 0 2px 8px var(--shadow); }
+    .player-card.selected { border-color: var(--gold); background: #2e2210; box-shadow: 0 0 12px #c9a22722; }
     .player-card .pname { font-size: 14px; color: var(--text); }
     .player-card .pmeta { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
     .no-players { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; padding: 1.5rem 8px; }
@@ -146,16 +189,18 @@
     .gm-main { flex: 1; overflow-y: auto; padding: 1.25rem; }
     .gm-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-style: italic; }
     .gm-player-header {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 1rem;
+      margin-bottom: 1rem; box-shadow: 0 2px 8px var(--shadow);
     }
     .gm-player-header h2 { font-size: 16px; color: var(--gold); }
     .gm-player-header .hmeta { font-size: 12px; color: var(--muted); font-style: italic; }
 
     /* ── Compétences ── */
     .skill-row {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 6px 10px; display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
     }
     .skill-row:hover { border-color: var(--amber); }
@@ -181,8 +226,10 @@
 
     /* ── Lancé de dés ── */
     .dice-section {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, #1a1410 0%, #12100e 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 12px 14px; margin-top: 1rem;
+      box-shadow: 0 2px 8px var(--shadow);
     }
     .dice-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
     .dice-input-row { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -195,17 +242,19 @@
     }
     .dice-log:empty { display: none; }
     .dice-entry {
-      padding: 4px 8px; border-radius: 4px; border-left: 3px solid var(--gold);
-      background: rgba(201,162,39,.08);
+      padding: 5px 10px; border-radius: 4px; border-left: 3px solid var(--gold);
+      background: rgba(201,162,39,.06);
     }
-    .dice-entry.gm-roll { border-left-color: var(--red); background: rgba(139,32,32,.1); }
+    .dice-entry.gm-roll { border-left-color: var(--red); background: rgba(139,32,32,.08); }
     .dice-entry .de-roll { color: var(--gold-l); font-weight: bold; }
     .dice-entry .de-total { color: #6af09a; font-weight: bold; font-size: 15px; }
 
     /* ── Chat vocal ── */
     .voice-section {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 12px 14px; margin-top: 1rem;
+      box-shadow: 0 2px 8px var(--shadow);
     }
     .voice-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
     .voice-bar { display: flex; align-items: center; gap: 10px; }
@@ -220,8 +269,10 @@
 
     /* ── Chat texte ── */
     .chat-section {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
       padding: 12px 14px; margin-top: 1rem;
+      box-shadow: 0 2px 8px var(--shadow);
     }
     .chat-section h3 { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; }
     .chat-log {
@@ -231,9 +282,11 @@
     }
     .chat-log:empty { display: none; }
     .chat-msg {
-      padding: 3px 8px; border-radius: 4px;
+      padding: 4px 10px; border-radius: 4px;
       border-left: 3px solid var(--muted);
+      background: rgba(255,255,255,.02);
     }
+    .chat-msg:hover { background: rgba(255,255,255,.04); }
     .chat-msg .chat-name { font-weight: bold; color: var(--gold-l); }
     .chat-msg.gm-msg { border-left-color: var(--red); }
     .chat-msg.gm-msg .chat-name { color: #f08080; }
@@ -266,6 +319,7 @@
       position: relative; background: var(--surface2);
       border: 1px solid var(--border); border-radius: var(--r);
       overflow: hidden; cursor: crosshair; display: inline-block; width: 100%;
+      box-shadow: 0 4px 16px var(--shadow);
     }
     .map-container img {
       display: block; width: 100%; height: auto; user-select: none;
@@ -301,9 +355,11 @@
 
     /* ── Barres de stats ── */
     .stats-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 12px 14px; margin-bottom: 1rem;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 14px 16px; margin-bottom: 1rem;
+      box-shadow: 0 2px 8px var(--shadow);
     }
     .stat-row { display: flex; flex-direction: column; gap: 2px; }
     .stat-label {
@@ -331,9 +387,9 @@
 
     /* ── Table des compétences ── */
     .skill-table {
-      width: 100%; border-collapse: collapse; font-size: 13px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); overflow: hidden;
+      width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px;
+      background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+      border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
     }
     .skill-table th {
       background: var(--surface2); color: var(--muted); font-size: 11px;
@@ -364,6 +420,13 @@
       color: var(--gold-l); border-radius: 4px;
     }
     .skill-table input.s-edit:focus { border-color: var(--gold); outline: none; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--amber); }
+    * { scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
   </style>
 </head>
 <body>
