@@ -71,6 +71,7 @@ io.on('connection', (socket) => {
     if (gmStillConnected)
       return socket.emit('error', { message: 'Un Maître du Jeu est déjà connecté.' });
     state.gmSocketId = socket.id;
+    myId   = 'gm';
     myRole = 'gm';
     socket.emit('joined', { role: 'gm' });
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
