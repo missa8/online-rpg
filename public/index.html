@@ -1115,32 +1115,33 @@ function buildDiceEntry(msg) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Chat texte
 // ══════════════════════════════════════════════════════════════════════════════
+let _chatId = 0;
 function sendChat() {
   const prefix = S.role === 'gm' ? 'gm' : 'p';
   const inp = document.getElementById(prefix + '-chat-inp');
   const text = inp.value.trim();
   if (!text) return;
-  const name = S.role === 'gm' ? '👑 MJ' : (S.myName || 'Moi');
-  appendChat({ name, text, timestamp: Date.now() }, true);
-  send({ type: 'chat_message', text });
+  send({ type: 'chat_message', text, id: 'c' + (++_chatId) });
   inp.value = '';
 }
 
-function appendChat(msg, noSpeak) {
+function appendChat(msg) {
   const prefix = S.role === 'gm' ? 'gm' : 'p';
   const log = document.getElementById(prefix + '-chat-log');
   if (!log) return;
+  if (msg.id && log.querySelector('[data-id="' + msg.id + '"]')) return;
   const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const cls = msg.name === '👑 MJ' ? 'chat-msg gm-msg' : 'chat-msg';
   const el = document.createElement('div');
   el.className = cls;
+  if (msg.id) el.dataset.id = msg.id;
   el.innerHTML = `<span class="chat-name">${esc(msg.name)}</span>`
     + ` <span>${esc(msg.text)}</span>`
     + ` <span class="chat-time">${time}</span>`;
   log.insertAdjacentElement('afterbegin', el);
   while (log.children.length > 100) log.lastChild.remove();
 
-  if (!noSpeak && 'speechSynthesis' in window) {
+  if ('speechSynthesis' in window) {
     const u = new SpeechSynthesisUtterance(msg.text);
     u.lang = 'fr-FR';
     u.rate = 1.1;

@@ -276,12 +276,12 @@ io.on('connection', (socket) => {
   });
 
   // ─── Chat texte ────────────────────────────────────────────────────────────
-  socket.on('chat_message', ({ text }) => {
+  socket.on('chat_message', ({ text, id }) => {
     text = String(text || '').trim().slice(0, 500);
     if (!text) return;
     const name = myRole === 'gm' ? '👑 MJ' : (state.players[myId]?.name || 'Inconnu');
-    const payload = { from: myId, name, text, timestamp: Date.now() };
-    socket.broadcast.emit('chat_message', payload);
+    const payload = { from: myId, name, text, id: id || crypto.randomUUID(), timestamp: Date.now() };
+    io.emit('chat_message', payload);
     console.log(`[💬] ${name}: ${text}`);
   });
 
