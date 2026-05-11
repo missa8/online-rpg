@@ -1344,7 +1344,7 @@ function handleMapUpload(input) {
     return input.value = '';
   }
 
-  const MAX_MB = 10;
+  const MAX_MB = 50;
   if (file.size > MAX_MB * 1024 * 1024) {
     if (err) err.textContent = `❌ L'image est trop lourde (max ${MAX_MB} Mo).`;
     return input.value = '';
