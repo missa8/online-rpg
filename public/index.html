@@ -1296,6 +1296,7 @@ function renderMap(containerId) {
       ${S.map.image ? '<button class="btn danger" onclick="removeMap()">Retirer la carte</button>' : ''}
     </div>
     <p id="map-upload-err" style="font-size:12px;color:#f08080;font-style:italic;margin:4px 0 8px;min-height:16px"></p>`;
+  }
 
   if (!S.map.image) {
     html += '<div class="map-empty">🗺️ Aucune carte chargée par le MJ.</div>';

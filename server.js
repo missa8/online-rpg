@@ -10,7 +10,7 @@ const PORT        = process.env.PORT || 3000;
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, { maxHttpBufferSize: 15e6 }); // 15 MB pour les cartes
+const io     = new Server(server, { maxHttpBufferSize: 50e6 }); // 50 MB pour les cartes
 
 app.use(express.static(path.join(__dirname, 'public')));
 
