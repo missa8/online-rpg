@@ -18,17 +18,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DEFAULT_STATS = { hp: 100, maxHp: 100, thirst: 100, hunger: 100, sleep: 100, hygiene: 100 };
 
 const state = {
-  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId, skills: [], stats } }
+  players: {},     // { [id]: { name, inventory: [], gold: 0, socketId, skills: [], stats, sheet } }
   gmSocketId: null,
   voiceUsers: {},  // { [playerId]: { playerId, name, socketId } }
   map: { image: null, markers: [] },
-  sheets: [],      // [{ id, name, class, race, level, photo, characteristics, description }]
 };
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 function playerSnapshot() {
   return Object.entries(state.players).map(([id, p]) => ({
-    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills, stats: p.stats, online: p.online === true,
+    id, name: p.name, gold: p.gold, inventory: p.inventory, skills: p.skills, stats: p.stats, online: p.online === true, sheet: p.sheet || null,
   }));
 }
 
@@ -38,16 +37,10 @@ function syncGm() {
   }
 }
 
-function syncSheets() {
-  if (state.gmSocketId) {
-    io.to(state.gmSocketId).emit('sheets_list', { sheets: state.sheets });
-  }
-}
-
 function syncPlayer(id) {
   const p = state.players[id];
   if (!p) return;
-  if (p.socketId) io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
+  if (p.socketId) io.to(p.socketId).emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats, sheet: p.sheet || null });
   syncGm();
 }
 
@@ -69,7 +62,7 @@ io.on('connection', (socket) => {
       myId   = reconnectId;
       myRole = 'player';
       socket.emit('joined',           { role: 'player', playerId: myId, name });
-      socket.emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats });
+      socket.emit('inventory_update', { inventory: p.inventory, gold: p.gold, skills: p.skills, stats: p.stats, sheet: p.sheet || null });
       socket.emit('gm_status',        { online: !!state.gmSocketId });
       if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
       syncGm();
@@ -79,9 +72,9 @@ io.on('connection', (socket) => {
 
     myId   = crypto.randomUUID();
     myRole = 'player';
-    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [], stats: { ...DEFAULT_STATS }, online: true };
+    state.players[myId] = { name, inventory: [], gold: 0, socketId: socket.id, skills: [], stats: { ...DEFAULT_STATS }, online: true, sheet: null };
     socket.emit('joined',           { role: 'player', playerId: myId, name });
-    socket.emit('inventory_update', { inventory: [], gold: 0, stats: { ...DEFAULT_STATS } });
+    socket.emit('inventory_update', { inventory: [], gold: 0, stats: { ...DEFAULT_STATS }, sheet: null });
     socket.emit('gm_status',        { online: !!state.gmSocketId });
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
@@ -101,7 +94,6 @@ io.on('connection', (socket) => {
     socket.emit('joined', { role: 'gm' });
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
-    syncSheets();
     Object.values(state.players).forEach(p =>
       p.socketId && io.to(p.socketId).emit('gm_status', { online: true })
     );
@@ -347,47 +339,27 @@ io.on('connection', (socket) => {
   });
 
   // ─── Fiches personnages ───────────────────────────────────────────────────
-  socket.on('create_sheet', () => {
-    if (myRole !== 'gm') return;
-    const sheet = {
-      id: crypto.randomUUID(),
-      name: 'Nouveau personnage',
-      class: '', race: '', level: 1, photo: null,
-      characteristics: { for: 10, dex: 10, con: 10, int: 10, sag: 10, cha: 10 },
-      description: '',
-    };
-    state.sheets.push(sheet);
-    syncSheets();
-  });
-
-  socket.on('update_sheet', ({ sheet }) => {
-    if (myRole !== 'gm' || !sheet || !sheet.id) return;
-    const idx = state.sheets.findIndex(s => s.id === sheet.id);
-    if (idx === -1) return;
-    state.sheets[idx] = {
-      ...state.sheets[idx],
-      name: String(sheet.name || '').slice(0, 50) || 'Personnage',
-      class: String(sheet.class || '').slice(0, 30),
-      race: String(sheet.race || '').slice(0, 30),
-      level: Math.max(1, Math.min(999, parseInt(sheet.level) || 1)),
-      photo: sheet.photo || null,
+  socket.on('save_sheet', ({ playerId, sheet }) => {
+    const targetId = myRole === 'gm' ? playerId : myId;
+    const p = state.players[targetId];
+    if (!p) return;
+    p.sheet = {
+      name: String(sheet?.name || '').slice(0, 50) || 'Personnage',
+      class: String(sheet?.class || '').slice(0, 30),
+      race: String(sheet?.race || '').slice(0, 30),
+      level: Math.max(1, Math.min(999, parseInt(sheet?.level) || 1)),
+      photo: sheet?.photo || null,
       characteristics: {
-        for: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.for) || 10)),
-        dex: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.dex) || 10)),
-        con: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.con) || 10)),
-        int: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.int) || 10)),
-        sag: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.sag) || 10)),
-        cha: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.cha) || 10)),
+        for: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.for) || 10)),
+        dex: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.dex) || 10)),
+        con: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.con) || 10)),
+        int: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.int) || 10)),
+        sag: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.sag) || 10)),
+        cha: Math.max(1, Math.min(30, parseInt(sheet?.characteristics?.cha) || 10)),
       },
-      description: String(sheet.description || '').slice(0, 2000),
+      description: String(sheet?.description || '').slice(0, 2000),
     };
-    syncSheets();
-  });
-
-  socket.on('delete_sheet', ({ sheetId }) => {
-    if (myRole !== 'gm') return;
-    state.sheets = state.sheets.filter(s => s.id !== sheetId);
-    syncSheets();
+    syncPlayer(targetId);
   });
 
   socket.on('disconnect', () => {

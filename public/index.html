@@ -510,6 +510,7 @@
   <div class="top-bar">
     <div class="top-tabs">
       <span class="top-tab active" data-tab="inv" onclick="switchPlayerTab('inv')">⚔ Inventaire</span>
+      <span class="top-tab" data-tab="fiche" onclick="switchPlayerTab('fiche')">📋 Fiche</span>
       <span class="top-tab" data-tab="map" onclick="switchPlayerTab('map')">🗺️ Carte</span>
     </div>
     <div class="right">
@@ -603,6 +604,11 @@
   <div id="player-tab-map" class="player-body hidden">
     <div id="player-map-container"></div>
   </div>
+
+  <!-- Onglet Fiche personnage du joueur -->
+  <div id="player-tab-fiche" class="player-body hidden">
+    <div id="p-sheet-container"></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════ ÉCRAN GM ═══════════════════════════════════ -->
@@ -610,7 +616,6 @@
   <div class="top-bar">
     <div class="top-tabs">
       <span class="top-tab active" data-tab="players" onclick="switchGmTab('players')">👥 Joueurs</span>
-      <span class="top-tab" data-tab="sheets" onclick="switchGmTab('sheets')">📋 Fiches</span>
       <span class="top-tab" data-tab="map" onclick="switchGmTab('map')">🗺️ Carte</span>
     </div>
     <div class="right">
@@ -638,11 +643,6 @@
   <!-- Onglet Carte du GM -->
   <div id="gm-tab-map" class="hidden" style="flex:1;overflow-y:auto;padding:1.25rem;display:flex;flex-direction:column">
     <div id="gm-map-container"></div>
-  </div>
-
-  <!-- Onglet Fiches personnages -->
-  <div id="gm-tab-sheets" class="hidden" style="flex:1;overflow-y:auto;padding:1.25rem">
-    <div id="gm-sheets-container"></div>
   </div>
 
   <!-- Chat vocal (toujours visible) -->
@@ -685,8 +685,7 @@ const S = {
   voicePeers: {},    // { playerId: { playerId, name, pc } }
   map: { image: null, markers: [] },
   stats: null,
-  sheets: [],       // GM : [{ id, name, class, race, level, photo, characteristics, description }]
-  selectedSheetId: null,
+  sheet: null,
 };
 
 const ICONS = { arme:'⚔', armure:'🛡', potion:'⚗', magie:'✨', nourriture:'🍖', misc:'💼' };
@@ -737,7 +736,7 @@ function doConnect() {
   });
 
   // Tous les événements serveur -> handleMsg
-  ['joined', 'inventory_update', 'player_list', 'sheets_list', 'gm_status', 'dice_result', 'voice_joined', 'voice_peer_joined', 'voice_peer_left', 'voice_signal', 'error', 'map_update', 'map_marker_added', 'map_marker_removed', 'chat_message'].forEach(evt => {
+  ['joined', 'inventory_update', 'player_list', 'gm_status', 'dice_result', 'voice_joined', 'voice_peer_joined', 'voice_peer_left', 'voice_signal', 'error', 'map_update', 'map_marker_added', 'map_marker_removed', 'chat_message'].forEach(evt => {
     S.socket.on(evt, (data) => handleMsg({ type: evt, ...data }));
   });
 }
@@ -783,9 +782,13 @@ function handleMsg(msg) {
       S.gold      = msg.gold;
       S.skills    = msg.skills || [];
       S.stats     = msg.stats || S.stats;
+      S.sheet     = msg.sheet || null;
       renderPlayerInv();
       renderPlayerStats();
       renderPlayerSkillsTable();
+      if (!document.getElementById('player-tab-fiche')?.classList.contains('hidden')) {
+        renderPlayerSheet();
+      }
       break;
 
     case 'player_list':
@@ -856,13 +859,6 @@ function handleMsg(msg) {
 
     case 'chat_message':
       appendChat(msg);
-      break;
-
-    case 'sheets_list':
-      S.sheets = msg.sheets || [];
-      if (!document.getElementById('gm-tab-sheets')?.classList.contains('hidden')) {
-        renderSheets();
-      }
       break;
   }
 }
@@ -1119,6 +1115,10 @@ function renderGmMain() {
         <input id="gm-skill-val" type="number" min="0" max="999" value="1" style="width:70px;text-align:center" />
         <button class="btn" onclick="gmAddSkill('${p.id}')">Ajouter</button>
       </div>
+    </div>
+
+    <div style="margin-top:1rem">
+      ${buildPlayerSheetEditor(p.sheet, p.id)}
     </div>
 
     <div class="dice-section">
@@ -1453,66 +1453,47 @@ function updateVoiceUsers() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Fiches personnages (GM)
+// Fiche personnage (joueur)
 // ══════════════════════════════════════════════════════════════════════════════
-function renderSheets() {
-  const container = document.getElementById('gm-sheets-container');
+function renderPlayerSheet() {
+  const container = document.getElementById('p-sheet-container');
   if (!container) return;
-
-  let html = '<div style="margin-bottom:1rem"><button class="btn" onclick="createSheet()">＋ Nouvelle fiche</button></div>';
-
-  if (!S.sheets.length) {
-    html += '<div class="inv-empty">Aucune fiche personnage. Créez-en une !</div>';
-  } else {
-    html += '<div class="sheet-list">';
-    S.sheets.forEach(s => {
-      const selected = s.id === S.selectedSheetId ? 'selected' : '';
-      html += `<div class="sheet-card ${selected}" onclick="selectSheet('${s.id}')">
-        <div class="sc-name">${esc(s.name)}</div>
-        <div class="sc-meta">${[s.race, s.class, 'Lv.'+s.level].filter(Boolean).join(' · ')}</div>
-      </div>`;
-    });
-    html += '</div>';
-
-    const sheet = S.sheets.find(s => s.id === S.selectedSheetId);
-    if (sheet) html += buildSheetEditor(sheet);
-  }
-
-  container.innerHTML = html;
+  container.innerHTML = buildPlayerSheetEditor(S.sheet, null);
 }
 
-function createSheet() {
-  send({ type: 'create_sheet' });
-}
+function buildPlayerSheetEditor(s, playerId) {
+  const isGm = S.role === 'gm';
+  const prefix = isGm ? 'gm-' : 'my-';
+  const sheet = s || { name: '', class: '', race: '', level: 1, photo: null, characteristics: {}, description: '' };
+  const c = sheet.characteristics || {};
+  const disabled = isGm ? '' : '';  // both can edit
 
-function selectSheet(id) {
-  S.selectedSheetId = id;
-  renderSheets();
-}
+  const photoHtml = sheet.photo
+    ? `<img src="${sheet.photo}" class="sheet-photo-preview" id="${prefix}photo-preview" />`
+    : `<div class="sheet-photo-placeholder" id="${prefix}photo-placeholder">Ajoutez une<br/>photo</div>`;
 
-function buildSheetEditor(s) {
-  const c = s.characteristics || {};
-  const photoHtml = s.photo
-    ? `<img src="${s.photo}" class="sheet-photo-preview" />`
-    : '<div class="sheet-photo-placeholder">Ajoutez une<br/>photo</div>';
+  const saveFn = isGm
+    ? `savePlayerSheet('${playerId}')`
+    : 'saveMySheet()';
 
   return `<div class="sheet-editor">
+    <h3 style="font-size:12px;color:var(--muted);letter-spacing:1px;margin-bottom:12px">✦ FICHE PERSONNAGE</h3>
     <div class="field-row">
       <label>Nom</label>
-      <input id="se-name" value="${esc(s.name)}" maxlength="50" />
+      <input id="${prefix}se-name" value="${esc(sheet.name)}" maxlength="50" />
     </div>
     <div class="field-row">
       <label>Classe</label>
-      <input id="se-class" value="${esc(s.class)}" maxlength="30" />
+      <input id="${prefix}se-class" value="${esc(sheet.class)}" maxlength="30" />
       <label>Race</label>
-      <input id="se-race" value="${esc(s.race)}" maxlength="30" />
+      <input id="${prefix}se-race" value="${esc(sheet.race)}" maxlength="30" />
       <label>Niveau</label>
-      <input id="se-level" type="number" min="1" max="999" value="${s.level}" style="max-width:70px" />
+      <input id="${prefix}se-level" type="number" min="1" max="999" value="${sheet.level}" style="max-width:70px" />
     </div>
 
     <div class="field-row">
       <label>Photo</label>
-      <input type="file" accept="image/*" onchange="handleSheetPhoto(this)" style="flex:1" />
+      <input type="file" accept="image/*" onchange="handleSheetPhoto(this,'${prefix}')" style="flex:1" />
     </div>
     ${photoHtml}
 
@@ -1521,74 +1502,80 @@ function buildSheetEditor(s) {
       ${['for','dex','con','int','sag','cha'].map(stat => `
         <div class="sheet-cara-item">
           <label>${stat.toUpperCase()}</label>
-          <input id="se-${stat}" type="number" min="1" max="30" value="${c[stat] || 10}" />
+          <input id="${prefix}se-${stat}" type="number" min="1" max="30" value="${c[stat] || 10}" />
           <div class="cara-btns">
-            <button class="cara-btn" onclick="adjCara('${stat}',-1)">−</button>
-            <button class="cara-btn" onclick="adjCara('${stat}',+1)">+</button>
+            <button class="cara-btn" onclick="adjCara('${prefix}se-${stat}')">−</button>
+            <button class="cara-btn" onclick="adjCara('${prefix}se-${stat}',+1)">+</button>
           </div>
         </div>
       `).join('')}
     </div>
 
     <p style="font-size:12px;color:var(--muted);letter-spacing:1px;margin:10px 0 6px">DESCRIPTION</p>
-    <textarea id="se-desc" maxlength="2000" placeholder="Description, historique, notes...">${esc(s.description)}</textarea>
+    <textarea id="${prefix}se-desc" maxlength="2000" placeholder="Description, historique, notes...">${esc(sheet.description)}</textarea>
 
     <div class="btn-row">
-      <button class="btn" onclick="saveSheet('${s.id}')">💾 Enregistrer</button>
-      <button class="btn danger" onclick="deleteSheet('${s.id}')">🗑 Supprimer</button>
+      <button class="btn" onclick="${saveFn}">💾 Enregistrer</button>
     </div>
   </div>`;
 }
 
-function adjCara(stat, delta) {
-  const inp = document.getElementById('se-' + stat);
+function adjCara(id, delta) {
+  const inp = document.getElementById(id);
   if (!inp) return;
-  const v = Math.max(1, Math.min(30, (parseInt(inp.value) || 10) + delta));
+  const v = Math.max(1, Math.min(30, (parseInt(inp.value) || 10) + (delta || -1)));
   inp.value = v;
 }
 
-function handleSheetPhoto(input) {
+function handleSheetPhoto(input, prefix) {
   const file = input.files[0];
   if (!file) return;
   if (!file.type.startsWith('image/')) return alert('Fichier image requis.');
   if (file.size > 5 * 1024 * 1024) return alert('Image trop lourde (max 5 Mo).');
   const reader = new FileReader();
   reader.onload = (e) => {
-    const img = document.querySelector('.sheet-photo-preview, .sheet-photo-placeholder');
-    if (img) {
-      img.outerHTML = `<img src="${e.target.result}" class="sheet-photo-preview" />`;
+    const existing = document.getElementById(prefix + 'photo-preview') || document.getElementById(prefix + 'photo-placeholder');
+    if (existing) {
+      existing.outerHTML = `<img src="${e.target.result}" class="sheet-photo-preview" id="${prefix}photo-preview" />`;
     }
   };
   reader.readAsDataURL(file);
 }
 
-function saveSheet(id) {
-  const get = id => document.getElementById(id)?.value || '';
-  const getNum = id => parseInt(document.getElementById(id)?.value) || 10;
+function saveMySheet() {
+  const get = id => document.getElementById('my-' + id)?.value || '';
+  const getNum = id => parseInt(document.getElementById('my-' + id)?.value) || 10;
   const sheet = {
-    id,
     name: get('se-name'),
     class: get('se-class'),
     race: get('se-race'),
     level: getNum('se-level'),
-    photo: document.querySelector('.sheet-photo-preview')?.src || null,
+    photo: document.getElementById('my-photo-preview')?.src || null,
     characteristics: {
-      for: getNum('se-for'),
-      dex: getNum('se-dex'),
-      con: getNum('se-con'),
-      int: getNum('se-int'),
-      sag: getNum('se-sag'),
-      cha: getNum('se-cha'),
+      for: getNum('se-for'), dex: getNum('se-dex'), con: getNum('se-con'),
+      int: getNum('se-int'), sag: getNum('se-sag'), cha: getNum('se-cha'),
     },
     description: get('se-desc'),
   };
-  send({ type: 'update_sheet', sheet });
+  send({ type: 'save_sheet', sheet });
 }
 
-function deleteSheet(id) {
-  if (!confirm('Supprimer cette fiche personnage ?')) return;
-  send({ type: 'delete_sheet', sheetId: id });
-  if (S.selectedSheetId === id) S.selectedSheetId = null;
+function savePlayerSheet(playerId) {
+  const get = id => document.getElementById('gm-' + id)?.value || '';
+  const getNum = id => parseInt(document.getElementById('gm-' + id)?.value) || 10;
+  const sheet = {
+    name: get('se-name'),
+    class: get('se-class'),
+    race: get('se-race'),
+    level: getNum('se-level'),
+    photo: document.getElementById('gm-photo-preview')?.src || null,
+    characteristics: {
+      for: getNum('se-for'), dex: getNum('se-dex'), con: getNum('se-con'),
+      int: getNum('se-int'), sag: getNum('se-sag'), cha: getNum('se-cha'),
+    },
+    description: get('se-desc'),
+  };
+  send({ type: 'save_sheet', playerId, sheet });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1620,7 +1607,9 @@ function switchPlayerTab(tab) {
   );
   document.getElementById('player-tab-inv').classList.toggle('hidden', tab !== 'inv');
   document.getElementById('player-tab-map').classList.toggle('hidden', tab !== 'map');
+  document.getElementById('player-tab-fiche').classList.toggle('hidden', tab !== 'fiche');
   if (tab === 'map') renderMap('player-map-container');
+  if (tab === 'fiche') renderPlayerSheet();
 }
 
 function switchGmTab(tab) {
@@ -1629,9 +1618,7 @@ function switchGmTab(tab) {
   );
   document.getElementById('gm-tab-players').classList.toggle('hidden', tab !== 'players');
   document.getElementById('gm-tab-map').classList.toggle('hidden', tab !== 'map');
-  document.getElementById('gm-tab-sheets').classList.toggle('hidden', tab !== 'sheets');
   if (tab === 'map') renderMap('gm-map-container');
-  if (tab === 'sheets') renderSheets();
 }
 
 function renderCurrentMap() {
