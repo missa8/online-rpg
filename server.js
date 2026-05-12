@@ -22,6 +22,7 @@ const state = {
   gmSocketId: null,
   voiceUsers: {},  // { [playerId]: { playerId, name, socketId } }
   map: { image: null, markers: [] },
+  sheets: [],      // [{ id, name, class, race, level, photo, characteristics, description }]
 };
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
@@ -34,6 +35,12 @@ function playerSnapshot() {
 function syncGm() {
   if (state.gmSocketId) {
     io.to(state.gmSocketId).emit('player_list', { players: playerSnapshot() });
+  }
+}
+
+function syncSheets() {
+  if (state.gmSocketId) {
+    io.to(state.gmSocketId).emit('sheets_list', { sheets: state.sheets });
   }
 }
 
@@ -94,6 +101,7 @@ io.on('connection', (socket) => {
     socket.emit('joined', { role: 'gm' });
     if (state.map.image) socket.emit('map_update', { image: state.map.image, markers: state.map.markers });
     syncGm();
+    syncSheets();
     Object.values(state.players).forEach(p =>
       p.socketId && io.to(p.socketId).emit('gm_status', { online: true })
     );
@@ -336,6 +344,50 @@ io.on('connection', (socket) => {
     if (myRole !== 'gm' && marker.playerId !== myId) return;
     state.map.markers.splice(idx, 1);
     io.emit('map_marker_removed', { markerId });
+  });
+
+  // ─── Fiches personnages ───────────────────────────────────────────────────
+  socket.on('create_sheet', () => {
+    if (myRole !== 'gm') return;
+    const sheet = {
+      id: crypto.randomUUID(),
+      name: 'Nouveau personnage',
+      class: '', race: '', level: 1, photo: null,
+      characteristics: { for: 10, dex: 10, con: 10, int: 10, sag: 10, cha: 10 },
+      description: '',
+    };
+    state.sheets.push(sheet);
+    syncSheets();
+  });
+
+  socket.on('update_sheet', ({ sheet }) => {
+    if (myRole !== 'gm' || !sheet || !sheet.id) return;
+    const idx = state.sheets.findIndex(s => s.id === sheet.id);
+    if (idx === -1) return;
+    state.sheets[idx] = {
+      ...state.sheets[idx],
+      name: String(sheet.name || '').slice(0, 50) || 'Personnage',
+      class: String(sheet.class || '').slice(0, 30),
+      race: String(sheet.race || '').slice(0, 30),
+      level: Math.max(1, Math.min(999, parseInt(sheet.level) || 1)),
+      photo: sheet.photo || null,
+      characteristics: {
+        for: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.for) || 10)),
+        dex: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.dex) || 10)),
+        con: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.con) || 10)),
+        int: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.int) || 10)),
+        sag: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.sag) || 10)),
+        cha: Math.max(1, Math.min(30, parseInt(sheet.characteristics?.cha) || 10)),
+      },
+      description: String(sheet.description || '').slice(0, 2000),
+    };
+    syncSheets();
+  });
+
+  socket.on('delete_sheet', ({ sheetId }) => {
+    if (myRole !== 'gm') return;
+    state.sheets = state.sheets.filter(s => s.id !== sheetId);
+    syncSheets();
   });
 
   socket.on('disconnect', () => {
