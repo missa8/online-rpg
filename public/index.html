@@ -683,6 +683,8 @@ const S = {
   voiceJoined: false,
   voiceStream: null,
   voicePeers: {},    // { playerId: { playerId, name, pc } }
+  voicePendingCandidates: {}, // { playerId: [RTCIceCandidateInit] }
+  voicePendingSignals: {}, // { playerId: [{ type, data }] }
   map: { image: null, markers: [] },
   stats: null,
   sheet: null,
@@ -1286,7 +1288,11 @@ function appendChat(msg) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Chat vocal (WebRTC)
 // ══════════════════════════════════════════════════════════════════════════════
-const VOICE_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const VOICE_CONFIG = {
+  iceServers: [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+  ],
+};
 
 function getVoiceBtn() {
   return document.getElementById(S.role === 'gm' ? 'gm-voice-btn' : 'p-voice-btn');
@@ -1330,6 +1336,7 @@ function leaveVoice() {
     S.voiceStream.getTracks().forEach(t => t.stop());
     S.voiceStream = null;
   }
+  S.voicePendingCandidates = {};
   getVoiceBtn().textContent = '🔊 Rejoindre';
   getVoiceStatus().textContent = 'Microphone désactivé';
   getVoiceUsers().innerHTML = '';
@@ -1353,34 +1360,141 @@ function handleVoicePeerLeft(msg) {
     peer.pc.close();
     delete S.voicePeers[msg.playerId];
   }
+  if (S.voicePendingCandidates[msg.playerId]) {
+    delete S.voicePendingCandidates[msg.playerId];
+  }
   updateVoiceUsers();
 }
 
 function handleVoiceSignal(msg) {
   const { from, data } = msg;
+  if (!from || !data || typeof data.type !== 'string') return;
+
   let peer = S.voicePeers[from];
 
   if (data.type === 'offer') {
-    // Nouvelle offre → créer une connexion si elle n'existe pas
     if (!peer) {
-      // On ne connaît pas encore ce peer → créer une connexion entrante
       createPeerConnection(from, data.name || 'Inconnu', false);
       peer = S.voicePeers[from];
     }
     peer.pc.setRemoteDescription(new RTCSessionDescription(data))
-      .then(() => peer.pc.createAnswer())
+      .then(() => {
+        flushPendingVoiceCandidates(from);
+        processQueuedVoiceSignals(from);
+        return peer.pc.createAnswer();
+      })
       .then(answer => peer.pc.setLocalDescription(answer))
       .then(() => {
         send({ type: 'voice_signal', to: from, data: peer.pc.localDescription });
       })
-      .catch(e => console.error('answer error', e));
+      .catch(e => console.error('[voice] answer error', e));
   } else if (data.type === 'answer') {
+    if (!peer) {
+      console.warn('[voice] answer reçu sans peer existant pour', from);
+      createPeerConnection(from, data.name || 'Inconnu', false);
+      peer = S.voicePeers[from];
+    }
     peer.pc.setRemoteDescription(new RTCSessionDescription(data))
-      .catch(e => console.error('set remote answer error', e));
-  } else if (data.type === 'candidate') {
-    peer.pc.addIceCandidate(new RTCIceCandidate(data.candidate))
-      .catch(e => console.error('add ICE error', e));
+      .then(() => {
+        flushPendingVoiceCandidates(from);
+        processQueuedVoiceSignals(from);
+      })
+      .catch(e => console.error('[voice] set remote answer error', e));
+  } else if (data.type === 'candidate' && data.candidate) {
+    if (!peer) {
+      queueVoiceSignal(from, { type: 'candidate', data: data.candidate });
+      console.debug('[voice] candidate stocké en attente du peer', from);
+    } else {
+      addIceCandidateOrQueue(from, data.candidate, 'signal');
+    }
+  } else if ((data.type === 'answer' || data.type === 'candidate') && !peer) {
+    queueVoiceSignal(from, { type: data.type, data: data.type === 'candidate' ? data.candidate : data });
+    console.debug('[voice] signal stocké en attente du peer', from, data.type);
   }
+}
+
+function canAddRemoteIceCandidate(peer) {
+  if (!peer || !peer.pc) return false;
+  const rd = peer.pc.remoteDescription;
+  const hasRemoteDesc = rd && typeof rd.type === 'string' && rd.type.length > 0;
+  if (!hasRemoteDesc) return false;
+  const state = peer.pc.signalingState;
+  return state !== 'closed';
+}
+
+function queueVoiceSignal(playerId, signal) {
+  S.voicePendingSignals[playerId] = S.voicePendingSignals[playerId] || [];
+  S.voicePendingSignals[playerId].push(signal);
+}
+
+function processQueuedVoiceSignals(playerId) {
+  const queued = S.voicePendingSignals[playerId];
+  if (!queued || !S.voicePeers[playerId]) return;
+  delete S.voicePendingSignals[playerId];
+  queued.forEach(signal => {
+    if (signal.type === 'candidate') {
+      addIceCandidateOrQueue(playerId, signal.data, 'queued');
+    } else {
+      handleVoiceSignal({ from: playerId, data: signal.data });
+    }
+  });
+}
+
+function tryAddIceCandidate(peer, candidate, playerId, source, retry = true) {
+  if (!canAddRemoteIceCandidate(peer)) {
+    queueVoiceSignal(playerId, { type: 'candidate', data: candidate });
+    console.debug('[voice] candidate re-queued car remoteDescription non prête', playerId, source,
+      'signalingState=', peer.pc.signalingState,
+      'remoteDescription=', peer.pc.remoteDescription);
+    return;
+  }
+
+  peer.pc.addIceCandidate(new RTCIceCandidate(candidate))
+    .then(() => console.debug('[voice] ICE candidate ajouté', playerId, source))
+    .catch(e => {
+      if (e && e.name === 'InvalidStateError' && retry) {
+        console.warn('[voice] addIceCandidate invalide, retry après délai', playerId, source, e.message);
+        setTimeout(() => tryAddIceCandidate(peer, candidate, playerId, source, false), 100);
+        return;
+      }
+      console.warn('[voice] addIceCandidate error', e.name, e.message, playerId, source,
+        'signalingState=', peer.pc.signalingState,
+        'remoteDescription=', peer.pc.remoteDescription);
+      if (e && e.name === 'InvalidStateError') {
+        queueVoiceSignal(playerId, { type: 'candidate', data: candidate });
+      } else {
+        console.error('[voice] add ICE error', e, playerId);
+      }
+    });
+}
+
+function addIceCandidateOrQueue(playerId, candidate, source) {
+  const peer = S.voicePeers[playerId];
+  if (!peer) {
+    queueVoiceSignal(playerId, { type: 'candidate', data: candidate });
+    console.debug('[voice] candidate stocké en attente de création du peer', playerId, source);
+    return;
+  }
+
+  if (!canAddRemoteIceCandidate(peer)) {
+    queueVoiceSignal(playerId, { type: 'candidate', data: candidate });
+    console.debug('[voice] candidate stocké en attente de remoteDescription ou signalingState pour', playerId, source,
+      'signalingState=', peer.pc.signalingState,
+      'remoteDescription=', peer.pc.remoteDescription);
+    return;
+  }
+
+  tryAddIceCandidate(peer, candidate, playerId, source);
+}
+
+function flushPendingVoiceCandidates(playerId) {
+  const pending = S.voicePendingCandidates[playerId];
+  const peer = S.voicePeers[playerId];
+  if (!pending || !peer) return;
+  if (!canAddRemoteIceCandidate(peer)) return;
+  const queued = pending.slice();
+  delete S.voicePendingCandidates[playerId];
+  queued.forEach(candidate => addIceCandidateOrQueue(playerId, candidate, 'flush'));
 }
 
 function createPeerConnection(playerId, name, initiator) {
@@ -1399,11 +1513,11 @@ function createPeerConnection(playerId, name, initiator) {
     const audio = document.createElement('audio');
     audio.srcObject = event.streams[0];
     audio.autoplay = true;
+    audio.playsInline = true;
     audio.controls = false;
     audio.style.display = 'none';
     document.body.appendChild(audio);
-    // Jouer automatiquement après interaction utilisateur
-    audio.play().catch(() => {});
+    audio.play().catch((e) => console.error('[voice] audio play error', e));
   };
 
   // ICE candidates
@@ -1413,8 +1527,13 @@ function createPeerConnection(playerId, name, initiator) {
     }
   };
 
+  pc.onicecandidateerror = (event) => {
+    console.error('[voice] ICE candidate error', event);
+  };
+
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+    console.debug('[voice] connection state', playerId, pc.connectionState, pc.iceConnectionState);
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       const peer = S.voicePeers[playerId];
       if (peer) {
         peer.pc.close();
@@ -1423,6 +1542,11 @@ function createPeerConnection(playerId, name, initiator) {
       }
     }
   };
+
+  if (S.voicePendingCandidates[playerId]) {
+    flushPendingVoiceCandidates(playerId);
+  }
+  processQueuedVoiceSignals(playerId);
 
   // Si on est l'initiateur, envoyer une offre
   if (initiator) {
