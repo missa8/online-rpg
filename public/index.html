@@ -1351,16 +1351,16 @@ function leaveVoice() {
 function handleVoiceJoined(msg) {
   console.debug('[voice] voice_joined reçu, peers existants=', msg.peers);
   msg.peers.forEach(peer => {
-    const initiator = S.myId && peer.playerId ? S.myId > peer.playerId : true;
-    createPeerConnection(peer.playerId, peer.name, initiator);
+    // On est le nouveau venu : ne pas initier l'offre, attendre que les membres existants nous contactent.
+    createPeerConnection(peer.playerId, peer.name, false);
   });
   updateVoiceUsers();
 }
 
 function handleVoicePeerJoined(msg) {
   console.debug('[voice] voice_peer_joined reçu pour', msg.playerId, msg.name);
-  const initiator = S.myId && msg.playerId ? S.myId > msg.playerId : false;
-  createPeerConnection(msg.playerId, msg.name, initiator);
+  // Un nouveau membre arrive : c'est à nous, membre existant, d'initier l'offre.
+  createPeerConnection(msg.playerId, msg.name, true);
   updateVoiceUsers();
 }
 
