@@ -1588,6 +1588,9 @@ function createPeerConnection(playerId, name, initiator) {
         .catch(e => console.error('offer error', e));
     }
 
+    updateVoiceUsers();
+  }
+
 function updateVoiceUsers() {
   const container = getVoiceUsers();
   if (!container) return;
