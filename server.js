@@ -287,7 +287,11 @@ io.on('connection', (socket) => {
 
   socket.on('voice_signal', ({ to, data }) => {
     const target = state.voiceUsers[to];
-    if (!target) return;
+    if (!target) {
+      console.warn('[voice] signal vers player introuvable', { from: myId, to, type: data?.type });
+      return;
+    }
+    console.debug('[voice] forwarding signal', { from: myId, to, type: data?.type });
     io.to(target.socketId).emit('voice_signal', {
       from: myId,
       data,

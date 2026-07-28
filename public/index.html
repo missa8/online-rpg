@@ -1349,12 +1349,13 @@ function leaveVoice() {
 }
 
 function handleVoiceJoined(msg) {
-  // msg.peers = liste des participants déjà connectés
+  console.debug('[voice] voice_joined reçu, peers existants=', msg.peers);
   msg.peers.forEach(peer => createPeerConnection(peer.playerId, peer.name, true));
   updateVoiceUsers();
 }
 
 function handleVoicePeerJoined(msg) {
+  console.debug('[voice] voice_peer_joined reçu pour', msg.playerId, msg.name);
   createPeerConnection(msg.playerId, msg.name, false);
   updateVoiceUsers();
 }
@@ -1374,10 +1375,12 @@ function handleVoicePeerLeft(msg) {
 function handleVoiceSignal(msg) {
   const { from, data } = msg;
   if (!from || !data || typeof data.type !== 'string') return;
+  console.debug('[voice] signal reçu', { from, type: data.type, peerExists: !!S.voicePeers[from], signalingState: S.voicePeers[from]?.pc?.signalingState, remoteDescription: S.voicePeers[from]?.pc?.remoteDescription });
 
   let peer = S.voicePeers[from];
 
   if (data.type === 'offer') {
+    console.debug('[voice] offre reçue de', from);
     if (!peer) {
       createPeerConnection(from, data.name || 'Inconnu', false);
       peer = S.voicePeers[from];
@@ -1558,8 +1561,8 @@ function createPeerConnection(playerId, name, initiator) {
     pc.createOffer()
       .then(offer => pc.setLocalDescription(offer))
       .then(() => {
-        // Inclure le nom dans le signal pour que le destinataire sache qui c'est
         const data = { ...pc.localDescription, name: S.voiceJoined ? (S.myName || '👑 MJ') : '' };
+        console.debug('[voice] envoi offre à', playerId, data.type);
         send({ type: 'voice_signal', to: playerId, data });
       })
       .catch(e => console.error('offer error', e));
