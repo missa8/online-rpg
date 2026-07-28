@@ -1359,8 +1359,9 @@ function handleVoiceJoined(msg) {
 
 function handleVoicePeerJoined(msg) {
   console.debug('[voice] voice_peer_joined reçu pour', msg.playerId, msg.name);
-  // Un nouveau membre arrive : c'est à nous, membre existant, d'initier l'offre.
-  createPeerConnection(msg.playerId, msg.name, true);
+  const initiator = true;
+  console.debug('[voice] handleVoicePeerJoined initiator=', initiator, 'peer=', msg.playerId);
+  createPeerConnection(msg.playerId, msg.name, initiator);
   updateVoiceUsers();
 }
 
@@ -1510,6 +1511,7 @@ function flushPendingVoiceCandidates(playerId) {
 }
 
 function createPeerConnection(playerId, name, initiator) {
+  console.debug('[voice] createPeerConnection', { playerId, name, initiator, hasPeer: !!S.voicePeers[playerId] });
   if (S.voicePeers[playerId]) return;
 
   const pc = new RTCPeerConnection(VOICE_CONFIG);
@@ -1562,6 +1564,7 @@ function createPeerConnection(playerId, name, initiator) {
 
   // Si on est l'initiateur, envoyer une offre
   if (initiator) {
+    console.debug('[voice] initier l’offre vers', playerId);
     pc.createOffer()
       .then(offer => pc.setLocalDescription(offer))
       .then(() => {
